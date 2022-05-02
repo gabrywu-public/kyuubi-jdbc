@@ -1,7 +1,9 @@
 package com.gabry.shadow.kyuubi.jdbc;
 
+import com.gabry.shadow.kyuubi.common.Common;
 import com.gabry.shadow.kyuubi.driver.ConnectionInfo;
 import com.gabry.shadow.kyuubi.driver.HostInfo;
+import com.gabry.shadow.kyuubi.utils.Utils;
 import org.apache.hadoop.hive.common.auth.HiveAuthUtils;
 import org.apache.hive.service.cli.HiveSQLException;
 import org.apache.hive.service.rpc.thrift.*;
@@ -40,11 +42,13 @@ public class KyuubiConnection implements java.sql.Connection {
   }
 
   private final ConnectionInfo connectionInfo;
+  private final int fetchSize;
   private int loginTimeout;
   private TTransport transport;
   private TCLIService.Iface cliClient;
   private TProtocolVersion serverProtocolVersion;
   private TSessionHandle sessionHandle;
+  private HostInfo connectedHost;
 
   public KyuubiConnection(ConnectionInfo connectionInfo) {
     this.connectionInfo = connectionInfo;
@@ -54,11 +58,22 @@ public class KyuubiConnection implements java.sql.Connection {
     } else {
       loginTimeout = (int) timeOut;
     }
+    fetchSize =
+        connectionInfo.getSessionConfigs().containsKey("fetchSize")
+            ? Integer.parseInt(connectionInfo.getSessionConfigs().get("fetchSize"))
+            : KyuubiStatement.DEFAULT_FETCH_SIZE;
+  }
+
+  private void checkOpen() throws SQLException {
+    if (isClosed()) {
+      throw new SQLException("Can't create Statement, connection is closed");
+    }
   }
 
   @Override
   public Statement createStatement() throws SQLException {
-    return null;
+    checkOpen();
+    return new KyuubiStatement(this, cliClient, sessionHandle, fetchSize);
   }
 
   @Override
@@ -94,16 +109,43 @@ public class KyuubiConnection implements java.sql.Connection {
     return connectionInfo.getHosts()[0];
   }
 
-  private TTransport createUnderlyingTransport() {
-    HostInfo hostInfo = getServerHost();
-    logger.debug("trying to connect to {}:{}", hostInfo.getHost(), hostInfo.getPort());
+  private TTransport createUnderlyingTransport(HostInfo hostInfo) {
     return HiveAuthUtils.getSocketTransport(hostInfo.getHost(), hostInfo.getPort(), loginTimeout);
   }
 
-  private TTransport createBinaryTransport() {
-    TTransport socketTransport = createUnderlyingTransport();
-    // KerberosSaslHelper.getKerberosTransport
-    return socketTransport;
+  private static class Tupple2<T1, T2> {
+    public final T1 first;
+    public final T2 second;
+
+    public Tupple2(T1 first, T2 second) {
+      this.first = first;
+      this.second = second;
+    }
+  }
+
+  private Tupple2<TTransport, HostInfo> createAndOpenBinaryTransport() throws TTransportException {
+    Tupple2<TTransport, HostInfo> result = null;
+    for (HostInfo hostInfo : connectionInfo.getHosts()) {
+      logger.info("trying to connect to {}", hostInfo);
+      TTransport socketTransport = createUnderlyingTransport(hostInfo);
+      // KerberosSaslHelper.getKerberosTransport
+      if (!socketTransport.isOpen()) {
+        try {
+          socketTransport.open();
+          result = new Tupple2<>(socketTransport, hostInfo);
+          break;
+        } catch (TTransportException e) {
+          logger.error("can't connect to {} because of {}", hostInfo, e.getMessage(), e);
+          Utils.cleanup(socketTransport);
+        }
+      }
+    }
+    if (result == null) {
+      throw new TTransportException(
+          "can't open to all of the hosts " + Arrays.toString(connectionInfo.getHosts()));
+    } else {
+      return result;
+    }
   }
 
   private static class SynchronizedHandler implements InvocationHandler {
@@ -145,44 +187,44 @@ public class KyuubiConnection implements java.sql.Connection {
   }
 
   public KyuubiConnection open() throws SQLException {
-    transport = createBinaryTransport();
-    if (!transport.isOpen()) {
-      try {
-        transport.open();
-      } catch (TTransportException e) {
-        throw new SQLException("can't open transport " + e.getMessage(), e);
-      }
-    }
-    HostInfo hostInfo = getServerHost();
-
-    logger.info("connected to {}:{}", hostInfo.getHost(), hostInfo.getPort());
-    TCLIService.Iface underlyingClient = new TCLIService.Client(new TBinaryProtocol(transport));
-    cliClient = newSynchronizedClient(underlyingClient);
     try {
-      sessionHandle = openSession();
-    } catch (TException e) {
-      throw new SQLException("can't open session " + e.getMessage(), e);
+      Tupple2<TTransport, HostInfo> result = createAndOpenBinaryTransport();
+      transport = result.first;
+      connectedHost = result.second;
+      logger.info("connected to {}:{}", connectedHost.getHost(), connectedHost.getPort());
+      TCLIService.Iface underlyingClient = new TCLIService.Client(new TBinaryProtocol(transport));
+      cliClient = newSynchronizedClient(underlyingClient);
+      try {
+        Tupple2<TSessionHandle, TProtocolVersion> sessionResult = openSession();
+        sessionHandle = sessionResult.first;
+        serverProtocolVersion = sessionResult.second;
+      } catch (TException e) {
+        throw new SQLException("can't open session " + e.getMessage(), e);
+      }
+      logger.info("open session {} to {} successfully", sessionHandle, connectedHost);
+    } catch (TTransportException e) {
+      throw new SQLException(e);
     }
-    logger.info("open session successfully {}", sessionHandle);
     return this;
   }
+  public TProtocolVersion getProtocolVersion() {
+    return serverProtocolVersion;
+  }
 
-  private TSessionHandle openSession() throws TException, HiveSQLException {
+  private Tupple2<TSessionHandle, TProtocolVersion> openSession()
+      throws TException, HiveSQLException {
     TOpenSessionReq openReq = new TOpenSessionReq();
     TOpenSessionResp openResp = cliClient.OpenSession(openReq);
-    if (openResp.getStatus().getStatusCode() != TStatusCode.SUCCESS_STATUS) {
-      throw new HiveSQLException(openResp.getStatus());
-    }
+    Utils.throwIfFail(openResp.getStatus());
     if (!supportedProtocols.contains(openResp.getServerProtocolVersion())) {
       throw new TException("Unsupported Hive2 protocol");
     }
-    serverProtocolVersion = openResp.getServerProtocolVersion();
+    TProtocolVersion serverProtocolVer = openResp.getServerProtocolVersion();
     TSessionHandle tSessionHandle = openResp.getSessionHandle();
     Map<String, String> openRespConf = openResp.getConfiguration();
     logger.debug("configuration from server {}", openRespConf);
-    String launchEngineOpHandleGuid = openRespConf.get("kyuubi.session.engine.launch.handle.guid");
-    String launchEngineOpHandleSecret =
-        openRespConf.get("kyuubi.session.engine.launch.handle.secret");
+    String launchEngineOpHandleGuid = openRespConf.get(Common.KyuubiGuidKey());
+    String launchEngineOpHandleSecret = openRespConf.get(Common.KyuubiSecretKey());
 
     if (launchEngineOpHandleGuid != null && launchEngineOpHandleSecret != null) {
       try {
@@ -195,15 +237,31 @@ public class KyuubiConnection implements java.sql.Connection {
       }
     }
 
-    return tSessionHandle;
+    return new Tupple2<>(tSessionHandle, serverProtocolVer);
   }
 
   @Override
-  public void close() throws SQLException {}
+  public void close() throws SQLException {
+    if (cliClient != null) {
+      TCloseSessionReq closeReq = new TCloseSessionReq(sessionHandle);
+      try {
+        TCloseSessionResp resp = cliClient.CloseSession(closeReq);
+        logger.info("disconnect to {} successfully {}", connectedHost, resp);
+      } catch (TException e) {
+        throw new SQLException("fail to cleanup server resources: " + e.getMessage(), e);
+      } finally {
+        Utils.cleanup(transport);
+        sessionHandle = null;
+        cliClient = null;
+        transport = null;
+        connectedHost = null;
+      }
+    }
+  }
 
   @Override
   public boolean isClosed() throws SQLException {
-    return false;
+    return cliClient == null;
   }
 
   @Override

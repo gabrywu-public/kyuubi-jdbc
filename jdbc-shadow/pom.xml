@@ -18,6 +18,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.gabry.shadow</groupId>
+            <artifactId>common-shadow</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-common</artifactId>
             <exclusions>

@@ -11,6 +11,7 @@
         <module>jdbc-shadow</module>
         <module>server-shadow</module>
         <module>engine-shadow</module>
+        <module>common-shadow</module>
     </modules>
     <packaging>pom</packaging>
 
@@ -24,10 +25,16 @@
         <thrift.version>0.16.0</thrift.version>
         <hive.service.version>3.1.3</hive.service.version>
         <hive.version>2.3.9</hive.version>
+        <scala.version>2.12.15</scala.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.scala-lang</groupId>
+                <artifactId>scala-library</artifactId>
+                <version>${scala.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.apache.hive</groupId>
                 <artifactId>hive-common</artifactId>
