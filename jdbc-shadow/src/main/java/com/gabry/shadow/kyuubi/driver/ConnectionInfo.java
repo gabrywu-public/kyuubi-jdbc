@@ -1,15 +1,19 @@
-package com.gabry.shadow.jdbc.driver;
+package com.gabry.shadow.kyuubi.driver;
 
-import com.gabry.shadow.jdbc.driver.exception.JdbcUrlParseException;
+import com.gabry.shadow.kyuubi.driver.exception.JdbcUrlParseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-public class JdbcUrl {
+public class ConnectionInfo {
+  private static Logger logger = LoggerFactory.getLogger(ConnectionInfo.class);
   public static final String SCHEMA_GROUP_NAME = "schema";
   public static final String USER_GROUP_NAME = "user";
   public static final String PASSWORD_GROUP_NAME = "password";
@@ -25,18 +29,39 @@ public class JdbcUrl {
   private static final String DB_NAME_PREFIX = "/";
   private static final String SESSION_CONFIGS_PREFIX = "?";
   private static final String ENGINE_CONFIGS_PREFIX = "#";
-  private static final String dbNameReg = "?<" + DB_NAME_GROUP_NAME + ">" + DB_NAME_PREFIX + "\\w+";
+  private static final String idReg = "(\\w|\\-|\\.)+?";
+  private static final String dbNameReg = "?<" + DB_NAME_GROUP_NAME + ">" + DB_NAME_PREFIX + idReg;
 
   private static final String hostsReg =
-      "?<" + HOSTS_GROUP_NAME + ">(\\w+(:\\d+)?)(,\\w+(:\\d+)?)*";
+      "?<" + HOSTS_GROUP_NAME + ">(" + idReg + "(:\\d+)?)(," + idReg + "(:\\d+)?)*";
   private static final String sessionConfigsReg =
       "?<"
           + SESSION_CONFIGS_GROUP_NAME
           + ">\\"
           + SESSION_CONFIGS_PREFIX
-          + "(\\w+=\\w+)(;\\w+=\\w+)*";
+          + "("
+          + idReg
+          + "="
+          + idReg
+          + ")(;"
+          + idReg
+          + "="
+          + idReg
+          + ")*";
   private static final String engineConfigsReg =
-      "?<" + ENGINE_GROUP_NAME + ">\\" + ENGINE_CONFIGS_PREFIX + "(\\w+=\\w+)(;\\w+=\\w+)*";
+      "?<"
+          + ENGINE_GROUP_NAME
+          + ">\\"
+          + ENGINE_CONFIGS_PREFIX
+          + "("
+          + idReg
+          + "="
+          + idReg
+          + ")(;"
+          + idReg
+          + "="
+          + idReg
+          + ")*";
 
   public static final Pattern jdbcUrlPattern =
       Pattern.compile(
@@ -44,7 +69,7 @@ public class JdbcUrl {
               .append("(")
               .append(schemaReg)
               .append(")")
-              .append("//(")
+              .append("://(")
               .append("(") // connect url part start
               .append("(") // user info part start
               .append("(")
@@ -69,29 +94,6 @@ public class JdbcUrl {
               .append(")?")
               .toString());
 
-  public static class HostInfo {
-    private static final HostInfo[] empty = new HostInfo[0];
-    private String host;
-    private Integer port;
-
-    private HostInfo() {
-      // do nothing
-    }
-
-    public String getHost() {
-      return host;
-    }
-
-    public Integer getPort() {
-      return port;
-    }
-
-    @Override
-    public String toString() {
-      return "Host{" + "host='" + host + '\'' + ", port=" + port + '}';
-    }
-  }
-
   private String schema;
   private String user;
   private String password;
@@ -99,67 +101,73 @@ public class JdbcUrl {
   private String dbName;
   private Map<String, String> sessionConfigs;
   private Map<String, String> engineConfigs;
+  private Properties sessionProperties;
 
-  private JdbcUrl() {
+  private ConnectionInfo() {
     hostInfos = HostInfo.empty;
     sessionConfigs = Collections.emptyMap();
     engineConfigs = Collections.emptyMap();
   }
 
-  public static JdbcUrl parse(String jdbcUrlStr) throws JdbcUrlParseException {
-    Matcher matcher = JdbcUrl.jdbcUrlPattern.matcher(jdbcUrlStr);
-    JdbcUrl jdbcUrl = new JdbcUrl();
+  public static ConnectionInfo parse(String jdbcUrlStr, Properties sessionProps)
+      throws JdbcUrlParseException {
+    ConnectionInfo connectionInfo = parse(jdbcUrlStr);
+    connectionInfo.sessionProperties = sessionProps;
+    return connectionInfo;
+  }
+
+  public static ConnectionInfo parse(String jdbcUrlStr) throws JdbcUrlParseException {
+    logger.debug("jdbcUrlPattern = [{}]", ConnectionInfo.jdbcUrlPattern);
+    Matcher matcher = ConnectionInfo.jdbcUrlPattern.matcher(jdbcUrlStr);
+    ConnectionInfo connectionInfo = new ConnectionInfo();
 
     if (!matcher.matches()) {
-      throw new JdbcUrlParseException(jdbcUrlStr);
+      throw new JdbcUrlParseException("invalid url " + jdbcUrlStr);
     }
-    jdbcUrl.schema = matcher.group(SCHEMA_GROUP_NAME);
+    connectionInfo.schema = matcher.group(SCHEMA_GROUP_NAME);
 
-    jdbcUrl.user = matcher.group(USER_GROUP_NAME);
+    connectionInfo.user = matcher.group(USER_GROUP_NAME);
     String password = matcher.group(PASSWORD_GROUP_NAME);
     if (null != password) {
-      jdbcUrl.password = password.substring(PASSWD_PREFIX.length());
+      connectionInfo.password = password.substring(PASSWD_PREFIX.length());
     }
 
     String hostGroup = matcher.group(HOSTS_GROUP_NAME);
-    if (null != jdbcUrl.user && null == hostGroup) {
+    if (null != connectionInfo.user && null == hostGroup) {
       throw new JdbcUrlParseException(jdbcUrlStr);
     }
     if (null != hostGroup) {
-      jdbcUrl.hostInfos =
+      connectionInfo.hostInfos =
           Arrays.stream(hostGroup.split(",", -1))
               .map(
                   hostPort -> {
-                    HostInfo hostInfo = new HostInfo();
                     String[] hostParts = hostPort.split(":", -1);
-                    hostInfo.host = hostParts[0];
-                    if (hostParts.length > 1) {
-                      hostInfo.port = Integer.parseInt(hostParts[1]);
-                    }
-                    return hostInfo;
+                    return hostParts.length > 1
+                        ? new HostInfo(hostParts[0], Integer.parseInt(hostParts[1]))
+                        : new HostInfo(hostParts[0]);
                   })
               .toArray(HostInfo[]::new);
     }
     String dbName = matcher.group(DB_NAME_GROUP_NAME);
     if (null != dbName) {
-      jdbcUrl.dbName = dbName.substring(DB_NAME_PREFIX.length());
+      connectionInfo.dbName = dbName.substring(DB_NAME_PREFIX.length());
     }
 
     String sessionConfigs = matcher.group(SESSION_CONFIGS_GROUP_NAME);
     if (null != sessionConfigs) {
-      jdbcUrl.sessionConfigs =
+      connectionInfo.sessionConfigs =
           Arrays.stream(sessionConfigs.substring(SESSION_CONFIGS_PREFIX.length()).split(";", -1))
               .map(config -> config.split("=", -1))
               .collect(Collectors.toMap(m -> m[0], m -> m[1]));
     }
     String engineConfigs = matcher.group(ENGINE_GROUP_NAME);
     if (null != engineConfigs) {
-      jdbcUrl.engineConfigs =
+      connectionInfo.engineConfigs =
           Arrays.stream(engineConfigs.substring(ENGINE_CONFIGS_PREFIX.length()).split(";", -1))
               .map(config -> config.split("=", -1))
               .collect(Collectors.toMap(m -> m[0], m -> m[1]));
     }
-    return jdbcUrl;
+    return connectionInfo;
   }
 
   public String getSchema() {
@@ -190,9 +198,13 @@ public class JdbcUrl {
     return engineConfigs;
   }
 
+  public Properties getSessionProperties() {
+    return sessionProperties;
+  }
+
   @Override
   public String toString() {
-    return "JdbcUrl{"
+    return "ConnectionInfo{"
         + "schema='"
         + schema
         + '\''
@@ -211,6 +223,8 @@ public class JdbcUrl {
         + sessionConfigs
         + ", engineConfigs="
         + engineConfigs
+        + ", sessionProperties="
+        + sessionProperties
         + '}';
   }
 }

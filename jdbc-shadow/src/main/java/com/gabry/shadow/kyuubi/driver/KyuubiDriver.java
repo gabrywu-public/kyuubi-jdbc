@@ -1,6 +1,7 @@
-package com.gabry.shadow.jdbc.driver;
+package com.gabry.shadow.kyuubi.driver;
 
-import com.gabry.shadow.jdbc.Utils.DriverCommon;
+import com.gabry.shadow.kyuubi.jdbc.KyuubiConnection;
+import com.gabry.shadow.kyuubi.utils.DriverCommon;
 
 import java.io.IOException;
 import java.sql.*;
@@ -20,8 +21,12 @@ public class KyuubiDriver implements Driver {
   }
 
   @Override
-  public Connection connect(String url, Properties info) throws SQLException {
-    return null;
+  public Connection connect(String url, Properties sessionProps) throws SQLException {
+    if (acceptsURL(url)) {
+      ConnectionInfo connectionInfo = ConnectionInfo.parse(url, sessionProps);
+      return new KyuubiConnection(connectionInfo).open();
+    }
+    throw new SQLFeatureNotSupportedException("KyuubiDriver not support this url " + url);
   }
 
   @Override
@@ -32,11 +37,6 @@ public class KyuubiDriver implements Driver {
   @Override
   public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) throws SQLException {
     Properties properties = new Properties(info);
-    if (acceptsURL(url)) {
-      JdbcUrl jdbcUrl = JdbcUrl.parse(url);
-      properties.put(KyuubiDriverPropertyInfo.HOST_PROPERTY_KEY, jdbcUrl.getHosts());
-      properties.put(KyuubiDriverPropertyInfo.DBNAME_PROPERTY_KEY, jdbcUrl.getDbName());
-    }
     DriverPropertyInfo[] dpi = new DriverPropertyInfo[3];
     dpi[0] = KyuubiDriverPropertyInfo.hostPropWith(properties);
     dpi[1] = KyuubiDriverPropertyInfo.portPropWith(properties);
@@ -90,53 +90,5 @@ public class KyuubiDriver implements Driver {
   @Override
   public Logger getParentLogger() throws SQLFeatureNotSupportedException {
     throw new SQLFeatureNotSupportedException("Method getParentLogger is not supported");
-  }
-
-  public static class ConnectionInfo {
-    private String host;
-    private int port;
-    private String dbName;
-
-    public ConnectionInfo() {
-      // do nothing
-    }
-
-    public String getHost() {
-      return host;
-    }
-
-    public void setHost(String host) {
-      this.host = host;
-    }
-
-    public int getPort() {
-      return port;
-    }
-
-    public void setPort(int port) {
-      this.port = port;
-    }
-
-    public String getDbName() {
-      return dbName;
-    }
-
-    public void setDbName(String dbName) {
-      this.dbName = dbName;
-    }
-
-    @Override
-    public String toString() {
-      return "ConnectionInfo{"
-          + "host='"
-          + host
-          + '\''
-          + ", port="
-          + port
-          + ", dbName='"
-          + dbName
-          + '\''
-          + '}';
-    }
   }
 }

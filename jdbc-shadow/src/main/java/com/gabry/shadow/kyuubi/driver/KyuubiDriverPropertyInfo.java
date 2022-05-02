@@ -1,4 +1,4 @@
-package com.gabry.shadow.jdbc.driver;
+package com.gabry.shadow.kyuubi.driver;
 
 import java.sql.DriverPropertyInfo;
 import java.util.Properties;

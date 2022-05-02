@@ -1,4 +1,4 @@
-package com.gabry.shadow.jdbc.driver.exception;
+package com.gabry.shadow.kyuubi.driver.exception;
 
 import java.sql.SQLException;
 
