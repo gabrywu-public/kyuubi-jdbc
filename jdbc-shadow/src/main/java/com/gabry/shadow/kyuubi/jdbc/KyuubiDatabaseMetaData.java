@@ -642,8 +642,10 @@ public class KyuubiDatabaseMetaData implements DatabaseMetaData {
       TGetCatalogsResp catalogResp =
           boundClient.GetCatalogs(new TGetCatalogsReq(boundSessionHandle));
       Utils.throwIfFail(catalogResp.getStatus());
-      return KyuubiResultSet.create(
-          boundConnection, boundClient, catalogResp.getOperationHandle(), boundSessionHandle);
+      KyuubiStatement catalogStatement =
+          KyuubiStatement.createStatementForOperation(
+              boundConnection, boundClient, boundSessionHandle, catalogResp.getOperationHandle());
+      return catalogStatement.getResultSet();
     } catch (TException e) {
       throw new SQLException(e.getMessage(), e);
     }

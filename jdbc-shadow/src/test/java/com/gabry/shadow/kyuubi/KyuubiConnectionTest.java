@@ -26,6 +26,7 @@ public class KyuubiConnectionTest {
         (KyuubiConnection) kyuubiDriver.connect("jdbc:kyuubi://localhost:10009/default", null)) {
       DatabaseMetaData databaseMetaData = connection.getMetaData();
       try (ResultSet resultSet = databaseMetaData.getCatalogs()) {
+        Assert.assertFalse(resultSet.isClosed());
         Assert.assertTrue(resultSet.next());
         Assert.assertEquals("spark_catalog", resultSet.getString(1));
         Assert.assertFalse(resultSet.next());

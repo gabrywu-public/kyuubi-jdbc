@@ -24,14 +24,15 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
 
-public class KyuubiResultSet implements ResultSet {
+public class KyuubiResultSet extends ReadonlyResultSet {
   protected final KyuubiConnection boundConnection;
+  protected final KyuubiStatement boundStatement;
   protected final int maxRows;
-  protected final int fetchSize;
-  protected int rowsFetched;
+  protected int fetchSize;
+  protected int currentRowNumber;
   protected Object[] currentRow;
   protected Iterator<Object[]> rowsIter;
-  private KyuubiTableSchema tableSchema;
+  private final KyuubiTableSchema tableSchema;
   protected boolean wasNull;
   protected KyuubiResultSetMetaData metaData;
   private final TCLIService.Iface boundClient;
@@ -42,63 +43,70 @@ public class KyuubiResultSet implements ResultSet {
       KyuubiStatement statement,
       TCLIService.Iface client,
       TOperationHandle operationHandle,
-      TSessionHandle sessionHandle) {
+      TSessionHandle sessionHandle)
+      throws SQLException {
+    TableSchema tableSchema = retrieveSchema(client, operationHandle);
+
     return new KyuubiResultSet(
-        (KyuubiConnection) statement.getConnection(),
+        statement,
         client,
         operationHandle,
         sessionHandle,
+        tableSchema,
         statement.getMaxRows(),
         statement.getFetchSize());
   }
 
-  public static KyuubiResultSet create(
-      KyuubiConnection connection,
-      TCLIService.Iface client,
-      TOperationHandle operationHandle,
-      TSessionHandle sessionHandle) {
-    return new KyuubiResultSet(connection, client, operationHandle, sessionHandle);
-  }
-
   private KyuubiResultSet(
-      KyuubiConnection boundConnection,
-      TCLIService.Iface client,
-      TOperationHandle operationHandle,
-      TSessionHandle sessionHandle) {
-    this(
-        boundConnection,
-        client,
-        operationHandle,
-        sessionHandle,
-        KyuubiStatement.DEFAULT_MAX_ROWS,
-        KyuubiStatement.DEFAULT_FETCH_SIZE);
-  }
-
-  private KyuubiResultSet(
-      KyuubiConnection boundConnection,
+      KyuubiStatement statement,
       TCLIService.Iface client,
       TOperationHandle operationHandle,
       TSessionHandle sessionHandle,
+      TableSchema tableSchema,
       int maxRows,
       int fetchSize) {
-    this.boundConnection = boundConnection;
+    this(
+        statement,
+        (KyuubiConnection) statement.getConnection(),
+        client,
+        operationHandle,
+        sessionHandle,
+        tableSchema,
+        maxRows,
+        fetchSize);
+  }
+
+  private KyuubiResultSet(
+      KyuubiStatement statement,
+      KyuubiConnection connection,
+      TCLIService.Iface client,
+      TOperationHandle operationHandle,
+      TSessionHandle sessionHandle,
+      TableSchema tableSchema,
+      int maxRows,
+      int fetchSize) {
+    this.boundStatement = statement;
+    this.boundConnection = connection;
     this.maxRows = maxRows;
     this.fetchSize = fetchSize;
-    this.rowsFetched = 0;
+    this.currentRowNumber = 0;
     this.rowsIter = Collections.emptyIterator();
     this.boundClient = client;
     this.boundOperationHandle = operationHandle;
     this.boundSessionHandle = sessionHandle;
+    this.tableSchema = new KyuubiTableSchema(tableSchema);
+    this.metaData = new KyuubiResultSetMetaData(this.tableSchema);
   }
 
-  private TableSchema retrieveSchema() throws SQLException {
-    TGetResultSetMetadataReq metadataReq = new TGetResultSetMetadataReq(boundOperationHandle);
+  private static TableSchema retrieveSchema(
+      TCLIService.Iface client, TOperationHandle operationHandle) throws SQLException {
+    TGetResultSetMetadataReq metadataReq = new TGetResultSetMetadataReq(operationHandle);
     try {
-      TGetResultSetMetadataResp metadataResp = boundClient.GetResultSetMetadata(metadataReq);
+      TGetResultSetMetadataResp metadataResp = client.GetResultSetMetadata(metadataReq);
       Utils.throwIfFail(metadataResp.getStatus());
       TTableSchema tTableSchema = metadataResp.getSchema();
       if (tTableSchema == null || !tTableSchema.isSetColumns()) {
-        throw new SQLException("table not found: " + boundOperationHandle);
+        throw new SQLException("table not found: " + operationHandle);
       }
       return new TableSchema(tTableSchema);
     } catch (TException e) {
@@ -108,42 +116,29 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public boolean isBeforeFirst() throws SQLException {
-    return rowsFetched == 0;
+    return currentRowNumber == 0;
   }
 
   @Override
   public boolean isAfterLast() throws SQLException {
-    return false;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public boolean isFirst() throws SQLException {
-    return false;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public boolean isLast() throws SQLException {
-    return false;
-  }
-
-  private void updateTableSchema() throws SQLException {
-    if (this.tableSchema == null) {
-      this.tableSchema = new KyuubiTableSchema(retrieveSchema());
-      this.metaData = new KyuubiResultSetMetaData(tableSchema);
-    }
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public boolean next() throws SQLException {
-    if (maxRows > 0 && rowsFetched >= maxRows) {
-      return false;
-    }
-    TFetchOrientation orientation =
-        isBeforeFirst() ? TFetchOrientation.FETCH_FIRST : TFetchOrientation.FETCH_NEXT;
-    if (isBeforeFirst()) {
-      updateTableSchema();
-    }
     if (!rowsIter.hasNext()) {
+      TFetchOrientation orientation =
+          isBeforeFirst() ? TFetchOrientation.FETCH_FIRST : TFetchOrientation.FETCH_NEXT;
       TFetchResultsReq fetchReq =
           new TFetchResultsReq(boundOperationHandle, orientation, fetchSize);
       try {
@@ -155,21 +150,29 @@ public class KyuubiResultSet implements ResultSet {
         throw new SQLException(e);
       }
     }
-    if (rowsIter.hasNext()) {
-      rowsFetched++;
-      currentRow = rowsIter.next();
-      return true;
-    } else {
-      return false;
+    currentRow = rowsIter.hasNext() ? rowsIter.next() : null;
+    if (currentRow != null) {
+      currentRowNumber++;
     }
+    return currentRow != null;
   }
 
   @Override
-  public void close() throws SQLException {}
+  public void close() throws SQLException {
+    if (!boundStatement.isClosed()) {
+      boundStatement.closeOperation();
+      currentRow = null;
+      currentRowNumber = 0;
+      rowsIter = Collections.emptyIterator();
+    }
+  }
 
+  /**
+   * Retrieves the current row number. The first row is number 1, the second number 2, and so on.
+   */
   @Override
   public int getRow() throws SQLException {
-    return rowsFetched;
+    return currentRowNumber;
   }
 
   @Override
@@ -178,7 +181,9 @@ public class KyuubiResultSet implements ResultSet {
   }
 
   @Override
-  public void afterLast() throws SQLException {}
+  public void afterLast() throws SQLException {
+    throw new SQLFeatureNotSupportedException("beforeFirst not supported yet");
+  }
 
   @Override
   public boolean absolute(int row) throws SQLException {
@@ -187,199 +192,50 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public boolean relative(int rows) throws SQLException {
-    return false;
+    throw new SQLFeatureNotSupportedException("absolute not supported");
   }
 
   @Override
   public boolean previous() throws SQLException {
-    return false;
+    throw new SQLFeatureNotSupportedException("absolute not supported");
   }
 
   @Override
-  public void setFetchDirection(int direction) throws SQLException {}
+  public void setFetchDirection(int direction) throws SQLException {
+    throw new SQLFeatureNotSupportedException("absolute not supported");
+  }
 
   @Override
   public int getFetchDirection() throws SQLException {
-    return 0;
+    return ResultSet.FETCH_FORWARD;
   }
 
   @Override
-  public void setFetchSize(int rows) throws SQLException {}
+  public void setFetchSize(int rows) throws SQLException {
+    this.fetchSize = rows;
+  }
 
   @Override
   public int getFetchSize() throws SQLException {
-    return 0;
+    return fetchSize;
   }
 
   @Override
   public int getType() throws SQLException {
-    return 0;
+    return ResultSet.TYPE_FORWARD_ONLY;
   }
 
   @Override
   public int getConcurrency() throws SQLException {
-    return 0;
+    return ResultSet.CONCUR_READ_ONLY;
   }
-
-  @Override
-  public boolean rowUpdated() throws SQLException {
-    return false;
-  }
-
-  @Override
-  public boolean rowInserted() throws SQLException {
-    return false;
-  }
-
-  @Override
-  public boolean rowDeleted() throws SQLException {
-    return false;
-  }
-
-  @Override
-  public void updateNull(int columnIndex) throws SQLException {}
-
-  @Override
-  public void updateBoolean(int columnIndex, boolean x) throws SQLException {}
-
-  @Override
-  public void updateByte(int columnIndex, byte x) throws SQLException {}
-
-  @Override
-  public void updateShort(int columnIndex, short x) throws SQLException {}
-
-  @Override
-  public void updateInt(int columnIndex, int x) throws SQLException {}
-
-  @Override
-  public void updateLong(int columnIndex, long x) throws SQLException {}
-
-  @Override
-  public void updateFloat(int columnIndex, float x) throws SQLException {}
-
-  @Override
-  public void updateDouble(int columnIndex, double x) throws SQLException {}
-
-  @Override
-  public void updateBigDecimal(int columnIndex, BigDecimal x) throws SQLException {}
-
-  @Override
-  public void updateString(int columnIndex, String x) throws SQLException {}
-
-  @Override
-  public void updateBytes(int columnIndex, byte[] x) throws SQLException {}
-
-  @Override
-  public void updateDate(int columnIndex, Date x) throws SQLException {}
-
-  @Override
-  public void updateTime(int columnIndex, Time x) throws SQLException {}
-
-  @Override
-  public void updateTimestamp(int columnIndex, Timestamp x) throws SQLException {}
-
-  @Override
-  public void updateAsciiStream(int columnIndex, InputStream x, int length) throws SQLException {}
-
-  @Override
-  public void updateBinaryStream(int columnIndex, InputStream x, int length) throws SQLException {}
-
-  @Override
-  public void updateCharacterStream(int columnIndex, Reader x, int length) throws SQLException {}
-
-  @Override
-  public void updateObject(int columnIndex, Object x, int scaleOrLength) throws SQLException {}
-
-  @Override
-  public void updateObject(int columnIndex, Object x) throws SQLException {}
-
-  @Override
-  public void updateNull(String columnLabel) throws SQLException {}
-
-  @Override
-  public void updateBoolean(String columnLabel, boolean x) throws SQLException {}
-
-  @Override
-  public void updateByte(String columnLabel, byte x) throws SQLException {}
-
-  @Override
-  public void updateShort(String columnLabel, short x) throws SQLException {}
-
-  @Override
-  public void updateInt(String columnLabel, int x) throws SQLException {}
-
-  @Override
-  public void updateLong(String columnLabel, long x) throws SQLException {}
-
-  @Override
-  public void updateFloat(String columnLabel, float x) throws SQLException {}
-
-  @Override
-  public void updateDouble(String columnLabel, double x) throws SQLException {}
-
-  @Override
-  public void updateBigDecimal(String columnLabel, BigDecimal x) throws SQLException {}
-
-  @Override
-  public void updateString(String columnLabel, String x) throws SQLException {}
-
-  @Override
-  public void updateBytes(String columnLabel, byte[] x) throws SQLException {}
-
-  @Override
-  public void updateDate(String columnLabel, Date x) throws SQLException {}
-
-  @Override
-  public void updateTime(String columnLabel, Time x) throws SQLException {}
-
-  @Override
-  public void updateTimestamp(String columnLabel, Timestamp x) throws SQLException {}
-
-  @Override
-  public void updateAsciiStream(String columnLabel, InputStream x, int length)
-      throws SQLException {}
-
-  @Override
-  public void updateBinaryStream(String columnLabel, InputStream x, int length)
-      throws SQLException {}
-
-  @Override
-  public void updateCharacterStream(String columnLabel, Reader reader, int length)
-      throws SQLException {}
-
-  @Override
-  public void updateObject(String columnLabel, Object x, int scaleOrLength) throws SQLException {}
-
-  @Override
-  public void updateObject(String columnLabel, Object x) throws SQLException {}
-
-  @Override
-  public void insertRow() throws SQLException {}
-
-  @Override
-  public void updateRow() throws SQLException {}
-
-  @Override
-  public void deleteRow() throws SQLException {}
-
-  @Override
-  public void refreshRow() throws SQLException {}
-
-  @Override
-  public void cancelRowUpdates() throws SQLException {}
-
-  @Override
-  public void moveToInsertRow() throws SQLException {}
-
-  @Override
-  public void moveToCurrentRow() throws SQLException {}
 
   /**
-   * @param columnLabel the label for the column specified with the SQL AS clause.
-   *                    If the SQL AS clause was not specified, then the label is the name of the column
+   * @param columnLabel the label for the column specified with the SQL AS clause. If the SQL AS
+   *     clause was not specified, then the label is the name of the column
    * @return first column index is 1, second is 2
-   * @throws SQLException if the ResultSet object does not contain a column labeled columnLabel,
-   * a database access error occurs or this method is called on a closed result set
+   * @throws SQLException if the ResultSet object does not contain a column labeled columnLabel, a
+   *     database access error occurs or this method is called on a closed result set
    */
   @Override
   public int findColumn(String columnLabel) throws SQLException {
@@ -400,14 +256,9 @@ public class KyuubiResultSet implements ResultSet {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
-  private <T> T tryGet(int columnIndex, Class<T> clazz) throws SQLException {
-    Object obj = getObject(columnIndex);
-    return wasNull ? null : (T) obj;
-  }
-
   @Override
   public BigDecimal getBigDecimal(int columnIndex) throws SQLException {
-    return tryGet(columnIndex, BigDecimal.class);
+    return (BigDecimal) getObject(columnIndex);
   }
 
   @Override
@@ -464,23 +315,42 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public byte getByte(int columnIndex) throws SQLException {
-    return 0;
+    Object obj = getObject(columnIndex);
+    if (obj instanceof Number) {
+      return ((Number) obj).byteValue();
+    } else if (obj == null) {
+      return 0;
+    }
+    throw new SQLException("Cannot convert column " + columnIndex + " to byte");
   }
 
   @Override
   public short getShort(int columnIndex) throws SQLException {
-    return 0;
+    try {
+      Object obj = getObject(columnIndex);
+      if (obj instanceof Number) {
+        return ((Number) obj).shortValue();
+      } else if (obj == null) {
+        return 0;
+      } else if (obj instanceof String) {
+        return Short.parseShort((String) obj);
+      }
+      throw new Exception("Illegal conversion");
+    } catch (Exception e) {
+      throw new SQLException(
+              "Cannot convert column " + columnIndex + " to short: " + e.toString(), e);
+    }
   }
 
   @Override
   public int getInt(int columnIndex) throws SQLException {
     try {
       Object obj = getObject(columnIndex);
-      if (Number.class.isInstance(obj)) {
+      if (obj instanceof Number) {
         return ((Number) obj).intValue();
       } else if (obj == null) {
         return 0;
-      } else if (String.class.isInstance(obj)) {
+      } else if (obj instanceof String) {
         return Integer.parseInt((String) obj);
       }
       throw new Exception("Illegal conversion");
@@ -492,17 +362,56 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public long getLong(int columnIndex) throws SQLException {
-    return 0;
+    try {
+      Object obj = getObject(columnIndex);
+      if (obj instanceof Number) {
+        return ((Number) obj).longValue();
+      } else if (obj == null) {
+        return 0;
+      } else if (obj instanceof String) {
+        return Long.parseLong((String) obj);
+      }
+      throw new Exception("Illegal conversion");
+    } catch (Exception e) {
+      throw new SQLException(
+              "Cannot convert column " + columnIndex + " to long: " + e.toString(), e);
+    }
   }
 
   @Override
   public float getFloat(int columnIndex) throws SQLException {
-    return 0;
+    try {
+      Object obj = getObject(columnIndex);
+      if (obj instanceof Number) {
+        return ((Number) obj).floatValue();
+      } else if (obj == null) {
+        return 0;
+      } else if (obj instanceof String) {
+        return Float.parseFloat((String) obj);
+      }
+      throw new Exception("Illegal conversion");
+    } catch (Exception e) {
+      throw new SQLException(
+              "Cannot convert column " + columnIndex + " to float: " + e.toString(), e);
+    }
   }
 
   @Override
   public double getDouble(int columnIndex) throws SQLException {
-    return 0;
+    try {
+      Object obj = getObject(columnIndex);
+      if (obj instanceof Number) {
+        return ((Number) obj).doubleValue();
+      } else if (obj == null) {
+        return 0;
+      } else if (obj instanceof String) {
+        return Double.parseDouble((String) obj);
+      }
+      throw new Exception("Illegal conversion");
+    } catch (Exception e) {
+      throw new SQLException(
+              "Cannot convert column " + columnIndex + " to double: " + e.toString(), e);
+    }
   }
 
   @Override
@@ -513,22 +422,48 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public byte[] getBytes(int columnIndex) throws SQLException {
-    return new byte[0];
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Date getDate(int columnIndex) throws SQLException {
-    return null;
+    Object obj = getObject(columnIndex);
+    if (obj == null) {
+      return null;
+    }
+    if (obj instanceof Date) {
+      return (Date) obj;
+    }
+    try {
+      if (obj instanceof String) {
+        return Date.valueOf((String) obj);
+      }
+    } catch (Exception e) {
+      throw new SQLException(
+              "Cannot convert column " + columnIndex + " to date: " + e.toString(), e);
+    }
+    // If we fell through to here this is not a valid type conversion
+    throw new SQLException("Cannot convert column " + columnIndex + " to date: Illegal conversion");
   }
 
   @Override
   public Time getTime(int columnIndex) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Timestamp getTimestamp(int columnIndex) throws SQLException {
-    return null;
+    Object obj = getObject(columnIndex);
+    if (obj == null) {
+      return null;
+    }
+    if (obj instanceof Timestamp) {
+      return (Timestamp) obj;
+    }
+    if (obj instanceof String) {
+      return Timestamp.valueOf((String) obj);
+    }
+    throw new SQLException("Illegal conversion");
   }
 
   @Override
@@ -538,7 +473,8 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public InputStream getUnicodeStream(int columnIndex) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 
   @Override
@@ -571,12 +507,12 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public byte getByte(String columnLabel) throws SQLException {
-    return 0;
+    return getByte(findColumn(columnLabel));
   }
 
   @Override
   public short getShort(String columnLabel) throws SQLException {
-    return 0;
+    return getShort(findColumn(columnLabel));
   }
 
   @Override
@@ -586,17 +522,17 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public long getLong(String columnLabel) throws SQLException {
-    return 0;
+    return getLong(findColumn(columnLabel));
   }
 
   @Override
   public float getFloat(String columnLabel) throws SQLException {
-    return 0;
+    return getFloat(findColumn(columnLabel));
   }
 
   @Override
   public double getDouble(String columnLabel) throws SQLException {
-    return 0;
+    return getDouble(findColumn(columnLabel));
   }
 
   @Override
@@ -606,22 +542,22 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public byte[] getBytes(String columnLabel) throws SQLException {
-    return new byte[0];
+    return getBytes(findColumn(columnLabel));
   }
 
   @Override
   public Date getDate(String columnLabel) throws SQLException {
-    return null;
+    return getDate(findColumn(columnLabel));
   }
 
   @Override
   public Time getTime(String columnLabel) throws SQLException {
-    return null;
+    return getTime(findColumn(columnLabel));
   }
 
   @Override
   public Timestamp getTimestamp(String columnLabel) throws SQLException {
-    return null;
+    return getTimestamp(findColumn(columnLabel));
   }
 
   @Override
@@ -631,7 +567,7 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public InputStream getUnicodeStream(String columnLabel) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
@@ -659,12 +595,11 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public String getCursorName() throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public ResultSetMetaData getMetaData() throws SQLException {
-    updateTableSchema();
     return metaData;
   }
 
@@ -707,285 +642,154 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public Statement getStatement() throws SQLException {
-    return null;
+    return boundStatement;
   }
 
   @Override
   public Object getObject(int columnIndex, Map<String, Class<?>> map) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 
   @Override
   public Ref getRef(int columnIndex) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 
   @Override
   public Clob getClob(int columnIndex) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 
   @Override
   public Object getObject(String columnLabel, Map<String, Class<?>> map) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 
   @Override
   public Ref getRef(String columnLabel) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 
   @Override
   public Clob getClob(String columnLabel) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 
   @Override
   public Date getDate(int columnIndex, Calendar cal) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Date getDate(String columnLabel, Calendar cal) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Time getTime(int columnIndex, Calendar cal) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Time getTime(String columnLabel, Calendar cal) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Timestamp getTimestamp(int columnIndex, Calendar cal) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Timestamp getTimestamp(String columnLabel, Calendar cal) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public URL getURL(int columnIndex) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public URL getURL(String columnLabel) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
-  @Override
-  public void updateRef(int columnIndex, Ref x) throws SQLException {}
-
-  @Override
-  public void updateRef(String columnLabel, Ref x) throws SQLException {}
-
-  @Override
-  public void updateBlob(int columnIndex, Blob x) throws SQLException {}
-
-  @Override
-  public void updateBlob(String columnLabel, Blob x) throws SQLException {}
-
-  @Override
-  public void updateClob(int columnIndex, Clob x) throws SQLException {}
-
-  @Override
-  public void updateClob(String columnLabel, Clob x) throws SQLException {}
-
-  @Override
-  public void updateArray(int columnIndex, Array x) throws SQLException {}
-
-  @Override
-  public void updateArray(String columnLabel, Array x) throws SQLException {}
 
   @Override
   public RowId getRowId(int columnIndex) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public RowId getRowId(String columnLabel) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
-
-  @Override
-  public void updateRowId(int columnIndex, RowId x) throws SQLException {}
-
-  @Override
-  public void updateRowId(String columnLabel, RowId x) throws SQLException {}
-
   @Override
   public int getHoldability() throws SQLException {
-    return 0;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public boolean isClosed() throws SQLException {
-    return false;
+    return boundStatement.isClosed();
   }
 
   @Override
-  public void updateNString(int columnIndex, String nString) throws SQLException {}
-
-  @Override
-  public void updateNString(String columnLabel, String nString) throws SQLException {}
-
-  @Override
-  public void updateNClob(int columnIndex, NClob nClob) throws SQLException {}
-
-  @Override
-  public void updateNClob(String columnLabel, NClob nClob) throws SQLException {}
-
-  @Override
   public NClob getNClob(int columnIndex) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public NClob getNClob(String columnLabel) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public SQLXML getSQLXML(int columnIndex) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public SQLXML getSQLXML(String columnLabel) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
-  public void updateSQLXML(int columnIndex, SQLXML xmlObject) throws SQLException {}
-
-  @Override
-  public void updateSQLXML(String columnLabel, SQLXML xmlObject) throws SQLException {}
-
-  @Override
   public String getNString(int columnIndex) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public String getNString(String columnLabel) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Reader getNCharacterStream(int columnIndex) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Reader getNCharacterStream(String columnLabel) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
-  public void updateNCharacterStream(int columnIndex, Reader x, long length) throws SQLException {}
-
-  @Override
-  public void updateNCharacterStream(String columnLabel, Reader reader, long length)
-      throws SQLException {}
-
-  @Override
-  public void updateAsciiStream(int columnIndex, InputStream x, long length) throws SQLException {}
-
-  @Override
-  public void updateBinaryStream(int columnIndex, InputStream x, long length) throws SQLException {}
-
-  @Override
-  public void updateCharacterStream(int columnIndex, Reader x, long length) throws SQLException {}
-
-  @Override
-  public void updateAsciiStream(String columnLabel, InputStream x, long length)
-      throws SQLException {}
-
-  @Override
-  public void updateBinaryStream(String columnLabel, InputStream x, long length)
-      throws SQLException {}
-
-  @Override
-  public void updateCharacterStream(String columnLabel, Reader reader, long length)
-      throws SQLException {}
-
-  @Override
-  public void updateBlob(int columnIndex, InputStream inputStream, long length)
-      throws SQLException {}
-
-  @Override
-  public void updateBlob(String columnLabel, InputStream inputStream, long length)
-      throws SQLException {}
-
-  @Override
-  public void updateClob(int columnIndex, Reader reader, long length) throws SQLException {}
-
-  @Override
-  public void updateClob(String columnLabel, Reader reader, long length) throws SQLException {}
-
-  @Override
-  public void updateNClob(int columnIndex, Reader reader, long length) throws SQLException {}
-
-  @Override
-  public void updateNClob(String columnLabel, Reader reader, long length) throws SQLException {}
-
-  @Override
-  public void updateNCharacterStream(int columnIndex, Reader x) throws SQLException {}
-
-  @Override
-  public void updateNCharacterStream(String columnLabel, Reader reader) throws SQLException {}
-
-  @Override
-  public void updateAsciiStream(int columnIndex, InputStream x) throws SQLException {}
-
-  @Override
-  public void updateBinaryStream(int columnIndex, InputStream x) throws SQLException {}
-
-  @Override
-  public void updateCharacterStream(int columnIndex, Reader x) throws SQLException {}
-
-  @Override
-  public void updateAsciiStream(String columnLabel, InputStream x) throws SQLException {}
-
-  @Override
-  public void updateBinaryStream(String columnLabel, InputStream x) throws SQLException {}
-
-  @Override
-  public void updateCharacterStream(String columnLabel, Reader reader) throws SQLException {}
-
-  @Override
-  public void updateBlob(int columnIndex, InputStream inputStream) throws SQLException {}
-
-  @Override
-  public void updateBlob(String columnLabel, InputStream inputStream) throws SQLException {}
-
-  @Override
-  public void updateClob(int columnIndex, Reader reader) throws SQLException {}
-
-  @Override
-  public void updateClob(String columnLabel, Reader reader) throws SQLException {}
-
-  @Override
-  public void updateNClob(int columnIndex, Reader reader) throws SQLException {}
-
-  @Override
-  public void updateNClob(String columnLabel, Reader reader) throws SQLException {}
-
-  @Override
   public <T> T getObject(int columnIndex, Class<T> type) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 
   @Override
   public <T> T getObject(String columnLabel, Class<T> type) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
@@ -995,12 +799,12 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public <T> T unwrap(Class<T> iface) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public boolean isWrapperFor(Class<?> iface) throws SQLException {
-    return false;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   private int toZeroIndex(int columnIndex) {
