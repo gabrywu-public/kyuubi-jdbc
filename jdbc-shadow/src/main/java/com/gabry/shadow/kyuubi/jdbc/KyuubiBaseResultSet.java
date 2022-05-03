@@ -26,8 +26,9 @@ public abstract class KyuubiBaseResultSet implements ResultSet {
   protected int rowsFetched;
   protected Object[] currentRow;
   protected Iterator<Object[]> rowsIter;
-  protected KyuubiTableSchema tableSchema;
+  private KyuubiTableSchema tableSchema;
   protected boolean wasNull;
+  protected KyuubiResultSetMetaData metaData;
 
   public KyuubiBaseResultSet(KyuubiStatement boundStatement, int maxRows, int fetchSize) {
     this.boundStatement = boundStatement;
@@ -41,7 +42,10 @@ public abstract class KyuubiBaseResultSet implements ResultSet {
   public boolean isBeforeFirst() throws SQLException {
     return rowsFetched == 0;
   }
-
+  protected void setTableSchema(KyuubiTableSchema tableSchema){
+    this.tableSchema = tableSchema;
+    this.metaData = new KyuubiResultSetMetaData(tableSchema);
+  }
   @Override
   public int getRow() throws SQLException {
     return rowsFetched;
@@ -327,7 +331,7 @@ public abstract class KyuubiBaseResultSet implements ResultSet {
 
   @Override
   public ResultSetMetaData getMetaData() throws SQLException {
-    return null;
+    return metaData;
   }
 
   @Override

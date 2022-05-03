@@ -52,7 +52,7 @@ public class KyuubiResultSet extends KyuubiBaseResultSet {
     TFetchOrientation orientation =
         isBeforeFirst() ? TFetchOrientation.FETCH_FIRST : TFetchOrientation.FETCH_NEXT;
     if (isBeforeFirst()) {
-      tableSchema = new KyuubiTableSchema(retrieveSchema());
+      setTableSchema(new KyuubiTableSchema(retrieveSchema()));
     }
     if (!rowsIter.hasNext()) {
       TFetchResultsReq fetchReq =
@@ -93,11 +93,6 @@ public class KyuubiResultSet extends KyuubiBaseResultSet {
 
   @Override
   public String getCursorName() throws SQLException {
-    return null;
-  }
-
-  @Override
-  public ResultSetMetaData getMetaData() throws SQLException {
     return null;
   }
 
