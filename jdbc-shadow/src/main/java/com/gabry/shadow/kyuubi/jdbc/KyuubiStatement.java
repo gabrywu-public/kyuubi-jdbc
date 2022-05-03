@@ -10,11 +10,12 @@ import java.util.Map;
 
 public class KyuubiStatement implements java.sql.Statement {
   public static final int DEFAULT_FETCH_SIZE = 1000;
+  public static final int DEFAULT_MAX_ROWS = 0;
   private final KyuubiConnection boundConnection;
   private final TCLIService.Iface boundClient;
   private final TSessionHandle boundSessionHandle;
   private int fetchSize;
-  private int maxRows = 0;
+  private int maxRows = DEFAULT_MAX_ROWS;
 
   private int queryTimeout = 0;
   private TOperationHandle operationHandle = null;
@@ -154,7 +155,7 @@ public class KyuubiStatement implements java.sql.Statement {
     if (!status.isHasResultSet() && !operationHandle.isHasResultSet()) {
       return false;
     }
-    resultSet = new KyuubiResultSet(this, boundClient, operationHandle, boundSessionHandle);
+    resultSet = KyuubiResultSet.create(this, boundClient, operationHandle, boundSessionHandle);
     return true;
   }
 
@@ -218,7 +219,7 @@ public class KyuubiStatement implements java.sql.Statement {
   }
 
   @Override
-  public Connection getConnection() throws SQLException {
+  public Connection getConnection() {
     return boundConnection;
   }
 

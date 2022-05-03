@@ -266,7 +266,7 @@ public class KyuubiConnection implements java.sql.Connection {
 
   @Override
   public DatabaseMetaData getMetaData() throws SQLException {
-    return null;
+    return new KyuubiDatabaseMetaData(this,cliClient,sessionHandle);
   }
 
   @Override

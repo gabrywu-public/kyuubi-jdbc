@@ -25,7 +25,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 public class KyuubiResultSet implements ResultSet {
-  protected final KyuubiStatement boundStatement;
+  protected final KyuubiConnection boundConnection;
   protected final int maxRows;
   protected final int fetchSize;
   protected int rowsFetched;
@@ -38,14 +38,52 @@ public class KyuubiResultSet implements ResultSet {
   private final TOperationHandle boundOperationHandle;
   private final TSessionHandle boundSessionHandle;
 
-  public KyuubiResultSet(
-      KyuubiStatement boundStatement,
+  public static KyuubiResultSet create(
+      KyuubiStatement statement,
       TCLIService.Iface client,
       TOperationHandle operationHandle,
       TSessionHandle sessionHandle) {
-    this.boundStatement = boundStatement;
-    this.maxRows = boundStatement.getMaxRows();
-    this.fetchSize = boundStatement.getFetchSize();
+    return new KyuubiResultSet(
+        (KyuubiConnection) statement.getConnection(),
+        client,
+        operationHandle,
+        sessionHandle,
+        statement.getMaxRows(),
+        statement.getFetchSize());
+  }
+
+  public static KyuubiResultSet create(
+      KyuubiConnection connection,
+      TCLIService.Iface client,
+      TOperationHandle operationHandle,
+      TSessionHandle sessionHandle) {
+    return new KyuubiResultSet(connection, client, operationHandle, sessionHandle);
+  }
+
+  private KyuubiResultSet(
+      KyuubiConnection boundConnection,
+      TCLIService.Iface client,
+      TOperationHandle operationHandle,
+      TSessionHandle sessionHandle) {
+    this(
+        boundConnection,
+        client,
+        operationHandle,
+        sessionHandle,
+        KyuubiStatement.DEFAULT_MAX_ROWS,
+        KyuubiStatement.DEFAULT_FETCH_SIZE);
+  }
+
+  private KyuubiResultSet(
+      KyuubiConnection boundConnection,
+      TCLIService.Iface client,
+      TOperationHandle operationHandle,
+      TSessionHandle sessionHandle,
+      int maxRows,
+      int fetchSize) {
+    this.boundConnection = boundConnection;
+    this.maxRows = maxRows;
+    this.fetchSize = fetchSize;
     this.rowsFetched = 0;
     this.rowsIter = Collections.emptyIterator();
     this.boundClient = client;
@@ -88,9 +126,11 @@ public class KyuubiResultSet implements ResultSet {
     return false;
   }
 
-  protected void setTableSchema(KyuubiTableSchema tableSchema) {
-    this.tableSchema = tableSchema;
-    this.metaData = new KyuubiResultSetMetaData(tableSchema);
+  private void updateTableSchema() throws SQLException {
+    if (this.tableSchema == null) {
+      this.tableSchema = new KyuubiTableSchema(retrieveSchema());
+      this.metaData = new KyuubiResultSetMetaData(tableSchema);
+    }
   }
 
   @Override
@@ -101,7 +141,7 @@ public class KyuubiResultSet implements ResultSet {
     TFetchOrientation orientation =
         isBeforeFirst() ? TFetchOrientation.FETCH_FIRST : TFetchOrientation.FETCH_NEXT;
     if (isBeforeFirst()) {
-      setTableSchema(new KyuubiTableSchema(retrieveSchema()));
+      updateTableSchema();
     }
     if (!rowsIter.hasNext()) {
       TFetchResultsReq fetchReq =
@@ -110,11 +150,7 @@ public class KyuubiResultSet implements ResultSet {
         TFetchResultsResp fetchResp = boundClient.FetchResults(fetchReq);
         Utils.throwIfFail(fetchResp.getStatus());
         TRowSet results = fetchResp.getResults();
-        rowsIter =
-            RowSetFactory.create(
-                    results,
-                    ((KyuubiConnection) boundStatement.getConnection()).getProtocolVersion())
-                .iterator();
+        rowsIter = RowSetFactory.create(results, boundConnection.getProtocolVersion()).iterator();
       } catch (TException e) {
         throw new SQLException(e);
       }
@@ -338,13 +374,20 @@ public class KyuubiResultSet implements ResultSet {
   @Override
   public void moveToCurrentRow() throws SQLException {}
 
+  /**
+   * @param columnLabel the label for the column specified with the SQL AS clause.
+   *                    If the SQL AS clause was not specified, then the label is the name of the column
+   * @return first column index is 1, second is 2
+   * @throws SQLException if the ResultSet object does not contain a column labeled columnLabel,
+   * a database access error occurs or this method is called on a closed result set
+   */
   @Override
   public int findColumn(String columnLabel) throws SQLException {
     ColumnDescriptor columnDescriptor = tableSchema.getColumnDescriptorOf(columnLabel);
     if (columnDescriptor == null) {
       throw new SQLException("can't find column " + columnLabel);
     }
-    return columnDescriptor.getOrdinalPosition();
+    return columnDescriptor.getOrdinalPosition() + 1;
   }
 
   @Override
@@ -621,22 +664,15 @@ public class KyuubiResultSet implements ResultSet {
 
   @Override
   public ResultSetMetaData getMetaData() throws SQLException {
+    updateTableSchema();
     return metaData;
   }
 
   @Override
   public Object getObject(int columnIndex) throws SQLException {
-    if (currentRow == null) {
-      throw new SQLException("No row found.");
-    }
-    if (currentRow.length == 0) {
-      throw new SQLException("RowSet does not contain any columns!");
-    }
-    if (columnIndex > currentRow.length) {
-      throw new SQLException("Invalid columnIndex: " + columnIndex);
-    }
-    Type columnType = tableSchema.getColumnDescriptorAt(columnIndex).getType();
-    Object rawObj = currentRow[columnIndex];
+    int zeroBasedIndex = toZeroIndex(columnIndex);
+    Type columnType = tableSchema.getColumnDescriptorAt(zeroBasedIndex).getType();
+    Object rawObj = currentRow[zeroBasedIndex];
     Object convertedObj = rawObj;
     switch (columnType) {
       case BINARY_TYPE:
@@ -965,5 +1001,9 @@ public class KyuubiResultSet implements ResultSet {
   @Override
   public boolean isWrapperFor(Class<?> iface) throws SQLException {
     return false;
+  }
+
+  private int toZeroIndex(int columnIndex) {
+    return columnIndex - 1;
   }
 }
