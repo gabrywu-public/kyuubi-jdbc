@@ -145,7 +145,20 @@ public abstract class KyuubiBaseResultSet implements ResultSet {
 
   @Override
   public int getInt(int columnIndex) throws SQLException {
-    return 0;
+    try {
+      Object obj = getObject(columnIndex);
+      if (Number.class.isInstance(obj)) {
+        return ((Number) obj).intValue();
+      } else if (obj == null) {
+        return 0;
+      } else if (String.class.isInstance(obj)) {
+        return Integer.parseInt((String) obj);
+      }
+      throw new Exception("Illegal conversion");
+    } catch (Exception e) {
+      throw new SQLException(
+          "Cannot convert column " + columnIndex + " to integer" + e.toString(), e);
+    }
   }
 
   @Override
@@ -239,7 +252,7 @@ public abstract class KyuubiBaseResultSet implements ResultSet {
 
   @Override
   public int getInt(String columnLabel) throws SQLException {
-    return 0;
+    return getInt(findColumn(columnLabel));
   }
 
   @Override
@@ -328,8 +341,8 @@ public abstract class KyuubiBaseResultSet implements ResultSet {
     if (columnIndex > currentRow.length) {
       throw new SQLException("Invalid columnIndex: " + columnIndex);
     }
-    Type columnType = tableSchema.getColumnDescriptorAt(columnIndex - 1).getType();
-    Object rawObj = currentRow[columnIndex - 1];
+    Type columnType = tableSchema.getColumnDescriptorAt(columnIndex).getType();
+    Object rawObj = currentRow[columnIndex];
     Object convertedObj = rawObj;
     switch (columnType) {
       case BINARY_TYPE:

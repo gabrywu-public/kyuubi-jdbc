@@ -33,7 +33,10 @@ public class KyuubiStatement implements java.sql.Statement {
 
   @Override
   public ResultSet executeQuery(String sql) throws SQLException {
-    return null;
+    if (!execute(sql)) {
+      throw new SQLException("The query did not generate a result set!");
+    }
+    return resultSet;
   }
 
   @Override
@@ -216,7 +219,7 @@ public class KyuubiStatement implements java.sql.Statement {
 
   @Override
   public Connection getConnection() throws SQLException {
-    return null;
+    return boundConnection;
   }
 
   @Override
