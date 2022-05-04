@@ -18,7 +18,6 @@ public class KyuubiConnectionTest {
       Assert.assertFalse(connection.isClosed());
     }
   }
-
   @Test
   public void testDatabaseMetadata() throws SQLException {
     KyuubiDriver kyuubiDriver = new KyuubiDriver();

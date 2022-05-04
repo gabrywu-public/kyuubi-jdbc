@@ -23,6 +23,7 @@ import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 public class KyuubiConnection implements java.sql.Connection {
   private static final Logger logger = LoggerFactory.getLogger(KyuubiConnection.class);
@@ -43,12 +44,14 @@ public class KyuubiConnection implements java.sql.Connection {
 
   private final ConnectionInfo connectionInfo;
   private final int fetchSize;
-  private int loginTimeout;
+  private final int loginTimeout;
   private TTransport transport;
   private TCLIService.Iface cliClient;
   private TProtocolVersion serverProtocolVersion;
   private TSessionHandle sessionHandle;
   private HostInfo connectedHost;
+  private SQLWarning warningChain = null;
+  private final Properties clientInfo;
 
   public KyuubiConnection(ConnectionInfo connectionInfo) {
     this.connectionInfo = connectionInfo;
@@ -62,6 +65,7 @@ public class KyuubiConnection implements java.sql.Connection {
         connectionInfo.getSessionConfigs().containsKey("fetchSize")
             ? Integer.parseInt(connectionInfo.getSessionConfigs().get("fetchSize"))
             : KyuubiStatement.DEFAULT_FETCH_SIZE;
+    clientInfo = new Properties();
   }
 
   private void checkOpen() throws SQLException {
@@ -78,32 +82,43 @@ public class KyuubiConnection implements java.sql.Connection {
 
   @Override
   public PreparedStatement prepareStatement(String sql) throws SQLException {
-    return null;
+    return new KyuubiPreparedStatement(this, cliClient, sessionHandle, sql);
   }
 
   @Override
   public CallableStatement prepareCall(String sql) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public String nativeSQL(String sql) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
-  public void setAutoCommit(boolean autoCommit) throws SQLException {}
+  public void setAutoCommit(boolean autoCommit) throws SQLException {
+    if (!autoCommit) {
+      logger.warn("Request to set autoCommit to false; Hive does not support autoCommit=false.");
+      SQLWarning warning = new SQLWarning("Hive does not support autoCommit=false");
+      if (warningChain == null) warningChain = warning;
+      else warningChain.setNextWarning(warning);
+    }
+  }
 
   @Override
   public boolean getAutoCommit() throws SQLException {
-    return false;
+    return true;
   }
 
   @Override
-  public void commit() throws SQLException {}
+  public void commit() throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
 
   @Override
-  public void rollback() throws SQLException {}
+  public void rollback() throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
 
   private HostInfo getServerHost() {
     return connectionInfo.getHosts()[0];
@@ -207,6 +222,7 @@ public class KyuubiConnection implements java.sql.Connection {
     }
     return this;
   }
+
   public TProtocolVersion getProtocolVersion() {
     return serverProtocolVersion;
   }
@@ -266,11 +282,13 @@ public class KyuubiConnection implements java.sql.Connection {
 
   @Override
   public DatabaseMetaData getMetaData() throws SQLException {
-    return new KyuubiDatabaseMetaData(this,cliClient,sessionHandle);
+    return new KyuubiDatabaseMetaData(this, cliClient, sessionHandle);
   }
 
   @Override
-  public void setReadOnly(boolean readOnly) throws SQLException {}
+  public void setReadOnly(boolean readOnly) throws SQLException {
+    throw new SQLException("Enabling read-only mode not supported");
+  }
 
   @Override
   public boolean isReadOnly() throws SQLException {
@@ -282,7 +300,7 @@ public class KyuubiConnection implements java.sql.Connection {
 
   @Override
   public String getCatalog() throws SQLException {
-    return null;
+    return "";
   }
 
   @Override
@@ -290,179 +308,248 @@ public class KyuubiConnection implements java.sql.Connection {
 
   @Override
   public int getTransactionIsolation() throws SQLException {
-    return 0;
+    return Connection.TRANSACTION_NONE;
   }
 
   @Override
   public SQLWarning getWarnings() throws SQLException {
-    return null;
+    return warningChain;
   }
 
   @Override
-  public void clearWarnings() throws SQLException {}
+  public void clearWarnings() throws SQLException {
+    warningChain = null;
+  }
 
   @Override
   public Statement createStatement(int resultSetType, int resultSetConcurrency)
       throws SQLException {
-    return null;
+    if (resultSetConcurrency != ResultSet.CONCUR_READ_ONLY) {
+      throw new SQLException(
+          "Statement with resultset concurrency " + resultSetConcurrency + " is not supported",
+          "HYC00"); // Optional feature not implemented
+    }
+    if (resultSetType == ResultSet.TYPE_SCROLL_SENSITIVE) {
+      throw new SQLException(
+          "Statement with resultset type " + resultSetType + " is not supported",
+          "HYC00"); // Optional feature not implemented
+    }
+    return new KyuubiStatement(this, cliClient, sessionHandle, fetchSize);
   }
 
   @Override
   public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency)
       throws SQLException {
-    return null;
+    return new KyuubiPreparedStatement(this, cliClient, sessionHandle, sql);
   }
 
   @Override
   public CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency)
       throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Map<String, Class<?>> getTypeMap() throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
-  public void setTypeMap(Map<String, Class<?>> map) throws SQLException {}
+  public void setTypeMap(Map<String, Class<?>> map) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
 
   @Override
-  public void setHoldability(int holdability) throws SQLException {}
+  public void setHoldability(int holdability) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
 
   @Override
   public int getHoldability() throws SQLException {
-    return 0;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Savepoint setSavepoint() throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Savepoint setSavepoint(String name) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
-  public void rollback(Savepoint savepoint) throws SQLException {}
+  public void rollback(Savepoint savepoint) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
 
   @Override
-  public void releaseSavepoint(Savepoint savepoint) throws SQLException {}
+  public void releaseSavepoint(Savepoint savepoint) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
 
   @Override
   public Statement createStatement(
       int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public PreparedStatement prepareStatement(
       String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability)
       throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public CallableStatement prepareCall(
       String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability)
       throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public PreparedStatement prepareStatement(String sql, int autoGeneratedKeys) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public PreparedStatement prepareStatement(String sql, int[] columnIndexes) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public PreparedStatement prepareStatement(String sql, String[] columnNames) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Clob createClob() throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public Blob createBlob() throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public NClob createNClob() throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public SQLXML createSQLXML() throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public boolean isValid(int timeout) throws SQLException {
-    return false;
+    boolean rc = false;
+    try {
+      String productName =
+          new KyuubiDatabaseMetaData(this, cliClient, sessionHandle).getDatabaseProductName();
+      logger.debug("current connection is valid {}", productName);
+      rc = true;
+    } catch (SQLException ignore) {
+    }
+    return rc;
   }
 
   @Override
-  public void setClientInfo(String name, String value) throws SQLClientInfoException {}
+  public void setClientInfo(String name, String value) throws SQLClientInfoException {
+    clientInfo.put(name, value);
+    updateClientInfo();
+  }
+
+  private void updateClientInfo() throws SQLClientInfoException {
+    try {
+      TSetClientInfoReq req = new TSetClientInfoReq(sessionHandle);
+      Map<String, String> clientInfoMap =
+          clientInfo.entrySet().stream()
+              .collect(Collectors.toMap(x -> x.getKey().toString(), x -> x.getValue().toString()));
+
+      req.setConfiguration(clientInfoMap);
+      TSetClientInfoResp openResp = cliClient.SetClientInfo(req);
+      Utils.throwIfFail(openResp.getStatus());
+    } catch (TException | SQLException e) {
+      logger.error("fail to update client info", e);
+      throw new SQLClientInfoException("Error setting client info", null, e);
+    }
+  }
 
   @Override
-  public void setClientInfo(Properties properties) throws SQLClientInfoException {}
+  public void setClientInfo(Properties properties) throws SQLClientInfoException {
+    clientInfo.clear();
+    clientInfo.putAll(properties);
+    updateClientInfo();
+  }
 
   @Override
   public String getClientInfo(String name) throws SQLException {
-    return null;
+    return clientInfo.getProperty(name);
   }
 
   @Override
   public Properties getClientInfo() throws SQLException {
-    return null;
+    return clientInfo;
   }
 
   @Override
   public Array createArrayOf(String typeName, Object[] elements) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 
   @Override
   public Struct createStruct(String typeName, Object[] attributes) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 
   @Override
-  public void setSchema(String schema) throws SQLException {}
+  public void setSchema(String schema) throws SQLException {
+    try(Statement stmt = createStatement()){
+      stmt.execute("use " + schema);
+    }
+  }
 
   @Override
   public String getSchema() throws SQLException {
-    return null;
+    try (Statement stmt = createStatement();
+         ResultSet res = stmt.executeQuery("SELECT current_database()")) {
+      if (!res.next()) {
+        throw new SQLException("Failed to get schema information");
+      }
+      return res.getString(1);
+    }
   }
 
   @Override
-  public void abort(Executor executor) throws SQLException {}
+  public void abort(Executor executor) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
 
   @Override
-  public void setNetworkTimeout(Executor executor, int milliseconds) throws SQLException {}
+  public void setNetworkTimeout(Executor executor, int milliseconds) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
 
   @Override
   public int getNetworkTimeout() throws SQLException {
-    return 0;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public <T> T unwrap(Class<T> iface) throws SQLException {
-    return null;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 
   @Override
   public boolean isWrapperFor(Class<?> iface) throws SQLException {
-    return false;
+    throw new SQLFeatureNotSupportedException("Method not supported");
+
   }
 }
