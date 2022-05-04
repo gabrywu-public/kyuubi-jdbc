@@ -44,7 +44,19 @@ public class KyuubiDriver implements Driver {
     return dpi;
   }
 
-  private static String getDriverManifestVersionAttribute() throws SQLException {
+  public static String getDriverName() throws SQLException {
+    if (manifestAttributes != null) {
+      try {
+        manifestAttributes = DriverUtils.loadManifestAttributes(KyuubiDriver.class);
+      } catch (IOException e) {
+        throw new SQLException(e);
+      }
+    }
+    assert manifestAttributes != null;
+    return manifestAttributes.getValue(Attributes.Name.IMPLEMENTATION_TITLE);
+  }
+
+  public static String getDriverManifestVersionAttribute() throws SQLException {
     try {
       if (manifestAttributes != null) {
         manifestAttributes = DriverUtils.loadManifestAttributes(KyuubiDriver.class);
@@ -57,19 +69,19 @@ public class KyuubiDriver implements Driver {
     }
   }
 
-  private int getVersionAt(int index) {
-    int majorVersion = -1;
+  public static int getVersionAt(int index) {
+    int version = -1;
     try {
-      String version = getDriverManifestVersionAttribute();
-      String[] versionTokens = version.split("\\.", -1);
+      String versionStr = getDriverManifestVersionAttribute();
+      String[] versionTokens = versionStr.split("\\.", -1);
       if (versionTokens.length >= (index + 1)) {
-        majorVersion = Integer.parseInt(versionTokens[index]);
+        version = Integer.parseInt(versionTokens[index]);
       }
     } catch (SQLException e) {
       throw new RuntimeException(e);
     }
 
-    return majorVersion;
+    return version;
   }
 
   @Override

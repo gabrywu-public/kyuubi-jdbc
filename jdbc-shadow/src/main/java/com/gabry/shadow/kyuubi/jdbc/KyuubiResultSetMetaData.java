@@ -37,7 +37,7 @@ public class KyuubiResultSetMetaData implements ResultSetMetaData {
 
   @Override
   public boolean isCurrency(int columnIndex) throws SQLException {
-    return false;
+    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
@@ -54,7 +54,7 @@ public class KyuubiResultSetMetaData implements ResultSetMetaData {
   public int getColumnDisplaySize(int columnIndex) throws SQLException {
     ColumnDescriptor column = tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex));
     Integer columnSize = column.getTypeDescriptor().getColumnSize();
-    return columnSize == null ? Integer.MAX_VALUE : columnSize.intValue();
+    return columnSize == null ? Integer.MAX_VALUE : columnSize;
   }
 
   @Override

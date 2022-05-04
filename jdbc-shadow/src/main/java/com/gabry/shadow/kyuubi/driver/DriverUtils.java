@@ -15,4 +15,17 @@ public class DriverUtils {
     URL manifestUrl = new URL("jar:" + classContainer + "!/META-INF/MANIFEST.MF");
     return new Manifest(manifestUrl.openStream()).getMainAttributes();
   }
+  public static int getDatabaseVersionAt(String fullVersion,int position){
+    int version = -1;
+    try {
+      String[] tokens = fullVersion.split("[\\.-]"); // $NON-NLS-1$
+
+      if (tokens != null && tokens.length > 1 && tokens[position] != null) {
+        version = Integer.parseInt(tokens[position]);
+      }
+    } catch (Exception e) {
+      version = -1;
+    }
+    return version;
+  }
 }
