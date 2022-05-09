@@ -1,7 +1,7 @@
 package com.gabry.kyuubi.jdbc;
 
+import com.gabry.kyuubi.common.Common;
 import com.gabry.kyuubi.utils.Utils;
-import com.gabry.shadow.kyuubi.common.Common;
 import com.gabry.kyuubi.driver.ConnectionInfo;
 import com.gabry.kyuubi.driver.HostInfo;
 import org.apache.hadoop.hive.common.auth.HiveAuthUtils;
