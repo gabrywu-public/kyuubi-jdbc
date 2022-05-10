@@ -10,6 +10,7 @@
     <modules>
         <module>jdbc</module>
         <module>common</module>
+        <module>unit-tests</module>
     </modules>
     <packaging>pom</packaging>
 
@@ -20,12 +21,14 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <thrift.version>0.16.0</thrift.version>
+        <thrift.version>0.9.3</thrift.version>
         <hive.version>3.1.3</hive.version>
         <scala.major.version>2.12</scala.major.version>
         <scala.minor.version>15</scala.minor.version>
         <scala.version>${scala.major.version}.${scala.minor.version}</scala.version>
         <log4j.version>2.17.2</log4j.version>
+        <hive.storage.version>2.7.2</hive.storage.version>
+        <slf4j.version>1.7.36</slf4j.version>
     </properties>
 
     <dependencyManagement>
@@ -49,6 +52,26 @@
                 <groupId>org.apache.hive</groupId>
                 <artifactId>hive-service</artifactId>
                 <version>${hive.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.hive</groupId>
+                <artifactId>hive-metastore</artifactId>
+                <version>${hive.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.hive</groupId>
+                <artifactId>hive-standalone-metastore</artifactId>
+                <version>${hive.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.hive</groupId>
+                <artifactId>hive-serde</artifactId>
+                <version>${hive.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.hive</groupId>
+                <artifactId>hive-storage-api</artifactId>
+                <version>${hive.storage.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.thrift</groupId>
@@ -81,6 +104,16 @@
                 <groupId>org.apache.logging.log4j</groupId>
                 <artifactId>log4j-1.2-api</artifactId>
                 <version>${log4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>jcl-over-slf4j</artifactId>
+                <version>${slf4j.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
