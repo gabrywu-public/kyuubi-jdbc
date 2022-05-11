@@ -4,10 +4,7 @@ import com.gabry.kyuubi.driver.exception.JdbcUrlParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -101,7 +98,6 @@ public class ConnectionInfo {
   private String dbName;
   private Map<String, String> sessionConfigs;
   private Map<String, String> engineConfigs;
-  private Properties sessionProperties;
 
   private ConnectionInfo() {
     hostInfos = HostInfo.empty;
@@ -109,14 +105,13 @@ public class ConnectionInfo {
     engineConfigs = Collections.emptyMap();
   }
 
+  public static ConnectionInfo parse(String jdbcUrlStr) throws JdbcUrlParseException {
+    return parse(jdbcUrlStr, null);
+  }
+//   jdbc:hive2://<host>:<port>/<dbName>;<sessionVars>?<kyuubiConfs>#<[spark|hive]Vars>
+
   public static ConnectionInfo parse(String jdbcUrlStr, Properties sessionProps)
       throws JdbcUrlParseException {
-    ConnectionInfo connectionInfo = parse(jdbcUrlStr);
-    connectionInfo.sessionProperties = sessionProps;
-    return connectionInfo;
-  }
-
-  public static ConnectionInfo parse(String jdbcUrlStr) throws JdbcUrlParseException {
     logger.debug("jdbcUrlPattern = [{}]", ConnectionInfo.jdbcUrlPattern);
     Matcher matcher = ConnectionInfo.jdbcUrlPattern.matcher(jdbcUrlStr);
     ConnectionInfo connectionInfo = new ConnectionInfo();
@@ -159,7 +154,14 @@ public class ConnectionInfo {
           Arrays.stream(sessionConfigs.substring(SESSION_CONFIGS_PREFIX.length()).split(";", -1))
               .map(config -> config.split("=", -1))
               .collect(Collectors.toMap(m -> m[0], m -> m[1]));
+    } else {
+      connectionInfo.sessionConfigs = new HashMap<>();
     }
+    if (sessionProps != null) {
+      sessionProps.forEach(
+          (key, value) -> connectionInfo.sessionConfigs.put(key.toString(), value.toString()));
+    }
+
     String engineConfigs = matcher.group(ENGINE_GROUP_NAME);
     if (null != engineConfigs) {
       connectionInfo.engineConfigs =
@@ -198,10 +200,6 @@ public class ConnectionInfo {
     return engineConfigs;
   }
 
-  public Properties getSessionProperties() {
-    return sessionProperties;
-  }
-
   @Override
   public String toString() {
     return "ConnectionInfo{"
@@ -223,8 +221,6 @@ public class ConnectionInfo {
         + sessionConfigs
         + ", engineConfigs="
         + engineConfigs
-        + ", sessionProperties="
-        + sessionProperties
         + '}';
   }
 }

@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 
 public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
   private static final Logger logger = LoggerFactory.getLogger(KyuubiConnection.class);
-  private static final List<TProtocolVersion> supportedProtocols = new ArrayList<>(10);
+  private static final List<TProtocolVersion> supportedProtocols = new ArrayList<>(11);
 
   static {
     supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V1);
@@ -42,7 +42,10 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
     supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V8);
     supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V9);
     supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V10);
+    supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V11);
   }
+
+  public static final String BEELINE_MODE_PROPERTY = "BEELINE_MODE";
 
   private final ConnectionInfo connectionInfo;
   private final int fetchSize;
@@ -58,6 +61,7 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
   private final Properties clientInfo;
   private Thread engineLogThread;
   private boolean stopping;
+  private boolean isBeeLineMode;
 
   public KyuubiConnection(ConnectionInfo connectionInfo) {
     this.connectionInfo = connectionInfo;
@@ -73,6 +77,8 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
             ? Integer.parseInt(connectionInfo.getSessionConfigs().get("fetchSize"))
             : KyuubiStatement.DEFAULT_FETCH_SIZE;
     clientInfo = new Properties();
+    isBeeLineMode =
+        Boolean.parseBoolean(connectionInfo.getSessionConfigs().get(BEELINE_MODE_PROPERTY));
   }
 
   private void checkOpen() throws SQLException {
@@ -236,16 +242,19 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
         OpenedSessionInfo sessionResult = openSession();
         serverProtocolVersion = sessionResult.getProtocolVersion();
 
-        execLogStatement =
-            KyuubiStatement.createStatementForOperation(
-                this,
-                cliClient,
-                sessionHandle,
-                sessionResult.getLaunchEngineOperationHandle(),
-                FetchType.LOG);
-        execLogResultSet = execLogStatement.executeOperation();
-        printLaunchEngineLogInBackend();
-        execLogStatement.waitForOperationToComplete();
+        if (!isBeeLineMode) {
+          execLogStatement =
+              KyuubiStatement.createStatementForOperation(
+                  this,
+                  cliClient,
+                  sessionHandle,
+                  sessionResult.getLaunchEngineOperationHandle(),
+                  FetchType.LOG);
+          execLogResultSet = execLogStatement.executeOperation();
+          printLaunchEngineLogInBackend();
+          execLogStatement.waitForOperationToComplete();
+        }
+
         sessionHandle = sessionResult.getSessionHandle();
       } catch (TException e) {
         throw new SQLException("can't open session " + e.getMessage(), e);
@@ -265,7 +274,7 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
           public void run() {
             while (!stopping && hasMoreLogs()) {
               try {
-                getExecLog().forEach(line -> logger.info("from engine: {}", line));
+                getExecLog().forEach(logger::info);
                 Thread.sleep(500);
               } catch (Exception e) {
                 logger.warn("failed to get engine log {}", e.getMessage(), e);
