@@ -112,7 +112,7 @@ class ConnectionInfoSuite extends AnyFunSuite {
     assert(connectionInfo.getSessionConfigs.isEmpty)
     assert(connectionInfo.getEngineConfigs.isEmpty)
 
-    connectionInfo = ConnectionInfo.parse("jdbc:kyuubi://user:passwd@localhost1:1203,localhost2/db_name?sessKey1=sessValue1")
+    connectionInfo = ConnectionInfo.parse("jdbc:kyuubi://user:passwd@localhost1:1203,localhost2/db_name;sessKey1=sessValue1")
     assert("jdbc:kyuubi" == connectionInfo.getSchema)
     assert("user" == connectionInfo.getUser)
     assert("passwd" == connectionInfo.getPassword)
@@ -129,7 +129,7 @@ class ConnectionInfoSuite extends AnyFunSuite {
     assert("sessValue1" == connectionInfo.getSessionConfigs.get("sessKey1"))
     assert(connectionInfo.getEngineConfigs.isEmpty)
 
-    connectionInfo = ConnectionInfo.parse("jdbc:kyuubi://user:passwd@localhost1:1203,localhost2/db_name?sessKey1=sessValue1;sessKey2=sessValue2")
+    connectionInfo = ConnectionInfo.parse("jdbc:kyuubi://user:passwd@localhost1:1203,localhost2/db_name;sessKey1=sessValue1;sessKey2=sessValue2")
     assert("jdbc:kyuubi" == connectionInfo.getSchema)
     assert("user" == connectionInfo.getUser)
     assert("passwd" == connectionInfo.getPassword)
@@ -147,7 +147,7 @@ class ConnectionInfoSuite extends AnyFunSuite {
     assert("sessValue2" == connectionInfo.getSessionConfigs.get("sessKey2"))
     assert(connectionInfo.getEngineConfigs.isEmpty)
 
-    connectionInfo = ConnectionInfo.parse("jdbc:kyuubi://user:passwd@localhost1:1203,localhost2/db_name?sessKey1=sessValue1;sessKey2=sessValue2#engineKey=engineValue")
+    connectionInfo = ConnectionInfo.parse("jdbc:kyuubi://user:passwd@localhost1:1203,localhost2/db_name;sessKey1=sessValue1;sessKey2=sessValue2?engineKey=engineValue")
     assert("jdbc:kyuubi" == connectionInfo.getSchema)
     assert("user" == connectionInfo.getUser)
     assert("passwd" == connectionInfo.getPassword)
@@ -167,7 +167,7 @@ class ConnectionInfoSuite extends AnyFunSuite {
     assert(1 == connectionInfo.getEngineConfigs.size)
     assert("engineValue" == connectionInfo.getEngineConfigs.get("engineKey"))
 
-    connectionInfo = ConnectionInfo.parse("jdbc:kyuubi://user:passwd@localhost1:1203,localhost2/db_name?sessKey1=sessValue1;sessKey2=sessValue2#engineKey1=engineValue1;engineKey2=engineValue2")
+    connectionInfo = ConnectionInfo.parse("jdbc:kyuubi://user:passwd@localhost1:1203,localhost2/db_name;sessKey1=sessValue1;sessKey2=sessValue2?engineKey1=engineValue1;engineKey2=engineValue2")
     assert("jdbc:kyuubi" == connectionInfo.getSchema)
     assert("user" == connectionInfo.getUser)
     assert("passwd" == connectionInfo.getPassword)
@@ -187,5 +187,29 @@ class ConnectionInfoSuite extends AnyFunSuite {
     assert(2 == connectionInfo.getEngineConfigs.size)
     assert("engineValue1" == connectionInfo.getEngineConfigs.get("engineKey1"))
     assert("engineValue2" == connectionInfo.getEngineConfigs.get("engineKey2"))
+
+    connectionInfo = ConnectionInfo.parse("jdbc:kyuubi://user:passwd@localhost1:1203,localhost2/db_name;sessKey1=sessValue1;sessKey2=sessValue2?engineKey1=engineValue1;engineKey2=engineValue2#engineVar1=engineValue1")
+    assert("jdbc:kyuubi" == connectionInfo.getSchema)
+    assert("user" == connectionInfo.getUser)
+    assert("passwd" == connectionInfo.getPassword)
+    assert(null != connectionInfo.getHosts)
+    assert(2 == connectionInfo.getHosts.length)
+    assert("localhost1" == connectionInfo.getHosts()(0).getHost)
+    assert(null != connectionInfo.getHosts()(0).getPort)
+    assert(1203 == connectionInfo.getHosts()(0).getPort.intValue)
+    assert("localhost2" == connectionInfo.getHosts()(1).getHost)
+    assert(null == connectionInfo.getHosts()(1).getPort)
+    assert("db_name" == connectionInfo.getDbName)
+    assert(null != connectionInfo.getSessionConfigs)
+    assert(2 == connectionInfo.getSessionConfigs.size)
+    assert("sessValue1" == connectionInfo.getSessionConfigs.get("sessKey1"))
+    assert("sessValue2" == connectionInfo.getSessionConfigs.get("sessKey2"))
+    assert(null != connectionInfo.getEngineConfigs)
+    assert(2 == connectionInfo.getEngineConfigs.size)
+    assert("engineValue1" == connectionInfo.getEngineConfigs.get("engineKey1"))
+    assert("engineValue2" == connectionInfo.getEngineConfigs.get("engineKey2"))
+
+    assert(1 == connectionInfo.getEngineVars.size)
+    assert("engineValue1" == connectionInfo.getEngineVars.get("engineVar1"))
   }
 }

@@ -4,7 +4,10 @@ import com.gabry.kyuubi.driver.exception.JdbcUrlParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -18,14 +21,16 @@ public class ConnectionInfo {
   public static final String SESSION_CONFIGS_GROUP_NAME = "sessionConfigs";
   public static final String HOSTS_GROUP_NAME = "hosts";
   public static final String ENGINE_GROUP_NAME = "engineConfigs";
+  public static final String ENGINE_VARS_GROUP_NAME = "engineVars";
   private static final String schemaReg = "?<" + SCHEMA_GROUP_NAME + ">jdbc:kyuubi";
   private static final String userReg = "?<" + USER_GROUP_NAME + ">\\w+";
   private static final String PASSWD_PREFIX = ":";
   private static final String passwordReg =
       "?<" + PASSWORD_GROUP_NAME + ">" + PASSWD_PREFIX + "\\w+";
   private static final String DB_NAME_PREFIX = "/";
-  private static final String SESSION_CONFIGS_PREFIX = "?";
-  private static final String ENGINE_CONFIGS_PREFIX = "#";
+  private static final String SESSION_CONFIGS_PREFIX = ";";
+  private static final String ENGINE_CONFIGS_PREFIX = "?";
+  private static final String ENGINE_VARS_PREFIX = "#";
   private static final String idReg = "(\\w|\\-|\\.)+?";
   private static final String dbNameReg = "?<" + DB_NAME_GROUP_NAME + ">" + DB_NAME_PREFIX + idReg;
 
@@ -59,6 +64,21 @@ public class ConnectionInfo {
           + "="
           + idReg
           + ")*";
+  private static final String engineVarsReg =
+      "?<"
+          + ENGINE_VARS_GROUP_NAME
+          + ">\\"
+          + ENGINE_VARS_PREFIX
+          + "("
+          + idReg
+          + "="
+          + idReg
+          + ")(;"
+          + idReg
+          + "="
+          + idReg
+          + ")*";
+  //   jdbc:hive2://<host>:<port>/<dbName>;<sessionVars>?<kyuubiConfs>#<[spark|hive]Vars>
 
   public static final Pattern jdbcUrlPattern =
       Pattern.compile(
@@ -88,6 +108,9 @@ public class ConnectionInfo {
               .append("(")
               .append(engineConfigsReg) // fragment configs part
               .append(")?")
+              .append("(")
+              .append(engineVarsReg) // fragment configs part
+              .append(")?")
               .append(")?")
               .toString());
 
@@ -98,6 +121,7 @@ public class ConnectionInfo {
   private String dbName;
   private Map<String, String> sessionConfigs;
   private Map<String, String> engineConfigs;
+  private Map<String, String> engineVars;
 
   private ConnectionInfo() {
     hostInfos = HostInfo.empty;
@@ -108,7 +132,6 @@ public class ConnectionInfo {
   public static ConnectionInfo parse(String jdbcUrlStr) throws JdbcUrlParseException {
     return parse(jdbcUrlStr, null);
   }
-//   jdbc:hive2://<host>:<port>/<dbName>;<sessionVars>?<kyuubiConfs>#<[spark|hive]Vars>
 
   public static ConnectionInfo parse(String jdbcUrlStr, Properties sessionProps)
       throws JdbcUrlParseException {
@@ -149,26 +172,37 @@ public class ConnectionInfo {
     }
 
     String sessionConfigs = matcher.group(SESSION_CONFIGS_GROUP_NAME);
-    if (null != sessionConfigs) {
-      connectionInfo.sessionConfigs =
-          Arrays.stream(sessionConfigs.substring(SESSION_CONFIGS_PREFIX.length()).split(";", -1))
-              .map(config -> config.split("=", -1))
-              .collect(Collectors.toMap(m -> m[0], m -> m[1]));
-    } else {
-      connectionInfo.sessionConfigs = new HashMap<>();
-    }
+
+    connectionInfo.sessionConfigs =
+        null != sessionConfigs
+            ? Arrays.stream(
+                    sessionConfigs.substring(SESSION_CONFIGS_PREFIX.length()).split(";", -1))
+                .map(config -> config.split("=", -1))
+                .collect(Collectors.toMap(m -> m[0], m -> m[1]))
+            : Collections.emptyMap();
+
     if (sessionProps != null) {
       sessionProps.forEach(
           (key, value) -> connectionInfo.sessionConfigs.put(key.toString(), value.toString()));
     }
 
     String engineConfigs = matcher.group(ENGINE_GROUP_NAME);
-    if (null != engineConfigs) {
-      connectionInfo.engineConfigs =
-          Arrays.stream(engineConfigs.substring(ENGINE_CONFIGS_PREFIX.length()).split(";", -1))
-              .map(config -> config.split("=", -1))
-              .collect(Collectors.toMap(m -> m[0], m -> m[1]));
-    }
+
+    connectionInfo.engineConfigs =
+        null != engineConfigs
+            ? Arrays.stream(engineConfigs.substring(ENGINE_CONFIGS_PREFIX.length()).split(";", -1))
+                .map(config -> config.split("=", -1))
+                .collect(Collectors.toMap(m -> m[0], m -> m[1]))
+            : Collections.emptyMap();
+
+    String engineVars = matcher.group(ENGINE_VARS_GROUP_NAME);
+
+    connectionInfo.engineVars =
+        null != engineVars
+            ? Arrays.stream(engineVars.substring(ENGINE_VARS_PREFIX.length()).split(";", -1))
+                .map(config -> config.split("=", -1))
+                .collect(Collectors.toMap(m -> m[0], m -> m[1]))
+            : Collections.emptyMap();
     return connectionInfo;
   }
 
@@ -198,6 +232,10 @@ public class ConnectionInfo {
 
   public Map<String, String> getEngineConfigs() {
     return engineConfigs;
+  }
+
+  public Map<String, String> getEngineVars() {
+    return engineVars;
   }
 
   @Override
