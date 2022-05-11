@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class ConnectionInfo {
-  private static Logger logger = LoggerFactory.getLogger(ConnectionInfo.class);
+  private static final Logger logger = LoggerFactory.getLogger(ConnectionInfo.class);
   public static final String SCHEMA_GROUP_NAME = "schema";
   public static final String USER_GROUP_NAME = "user";
   public static final String PASSWORD_GROUP_NAME = "password";

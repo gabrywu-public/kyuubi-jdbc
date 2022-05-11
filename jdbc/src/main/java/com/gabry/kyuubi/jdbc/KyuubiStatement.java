@@ -1,6 +1,7 @@
 package com.gabry.kyuubi.jdbc;
 
 import com.gabry.kyuubi.utils.Utils;
+import org.apache.hive.service.cli.FetchType;
 import org.apache.hive.service.cli.HiveSQLException;
 import org.apache.hive.service.rpc.thrift.*;
 import org.apache.thrift.TException;
@@ -23,30 +24,39 @@ public class KyuubiStatement implements java.sql.Statement {
   private int maxRows = DEFAULT_MAX_ROWS;
   private int queryTimeout = 0;
   private TOperationHandle currentOperationHandle = null;
-  private ResultSet currentResultSet = null;
+  private KyuubiResultSet currentResultSet = null;
+  private final FetchType fetchType;
 
   public static KyuubiStatement createStatementForOperation(
       KyuubiConnection connection,
       TCLIService.Iface client,
       TSessionHandle sessionHandle,
-      TOperationHandle operationHandle)
-      throws SQLException {
-    return new KyuubiStatement(connection, client, sessionHandle, operationHandle);
+      TOperationHandle operationHandle,
+      FetchType fetchType) {
+    return new KyuubiStatement(connection, client, sessionHandle, operationHandle, fetchType);
+  }
+
+  public static KyuubiStatement createStatementForOperation(
+      KyuubiConnection connection,
+      TCLIService.Iface client,
+      TSessionHandle sessionHandle,
+      TOperationHandle operationHandle) {
+    return createStatementForOperation(
+        connection, client, sessionHandle, operationHandle, FetchType.QUERY_OUTPUT);
   }
 
   private KyuubiStatement(
       KyuubiConnection connection,
       TCLIService.Iface client,
       TSessionHandle sessionHandle,
-      TOperationHandle operationHandle)
-      throws SQLException {
+      TOperationHandle operationHandle,
+      FetchType fetchType) {
     this.boundConnection = connection;
     this.boundClient = client;
     this.boundSessionHandle = sessionHandle;
     this.fetchSize = KyuubiStatement.MAX_FETCH_SIZE;
     this.currentOperationHandle = operationHandle;
-    currentResultSet =
-        KyuubiResultSet.create(this, boundClient, currentOperationHandle, boundSessionHandle);
+    this.fetchType = fetchType;
   }
 
   public KyuubiStatement(
@@ -54,10 +64,28 @@ public class KyuubiStatement implements java.sql.Statement {
       TCLIService.Iface client,
       TSessionHandle sessionHandle,
       int fetchSize) {
+    this(connection, client, sessionHandle, fetchSize, FetchType.QUERY_OUTPUT);
+  }
+
+  public KyuubiStatement(
+      KyuubiConnection connection,
+      TCLIService.Iface client,
+      TSessionHandle sessionHandle,
+      int fetchSize,
+      FetchType fetchType) {
     this.boundConnection = connection;
     this.boundClient = client;
     this.boundSessionHandle = sessionHandle;
     this.fetchSize = fetchSize;
+    this.fetchType = fetchType;
+  }
+
+  public KyuubiResultSet executeOperation() throws SQLException {
+    if (currentOperationHandle == null) {
+      throw new SQLException("there is not a running SQL or operation");
+    }
+    return KyuubiResultSet.create(
+        this, boundClient, currentOperationHandle, boundSessionHandle, fetchType);
   }
 
   @Override
@@ -180,11 +208,13 @@ public class KyuubiStatement implements java.sql.Statement {
     return execResp.getOperationHandle();
   }
 
-  private TGetOperationStatusResp waitForOperationToComplete() throws SQLException {
-    if (currentOperationHandle == null) {
-      throw new SQLException("there is not a running SQL");
-    }
-    TGetOperationStatusReq statusReq = new TGetOperationStatusReq(currentOperationHandle);
+  public void waitForOperationToComplete() throws SQLException {
+    waitForOperationToComplete(currentOperationHandle);
+  }
+
+  private TGetOperationStatusResp waitForOperationToComplete(TOperationHandle operationHandle)
+      throws SQLException {
+    TGetOperationStatusReq statusReq = new TGetOperationStatusReq(operationHandle);
     statusReq.setGetProgressUpdate(true);
     TGetOperationStatusResp statusResp = null;
     boolean isOperationComplete = false;
@@ -208,7 +238,7 @@ public class KyuubiStatement implements java.sql.Statement {
                   statusResp.getSqlState(),
                   statusResp.getErrorCode());
             case CANCELED_STATE:
-              throw new SQLException("query is cancelled: " + currentOperationHandle);
+              throw new SQLException("query is cancelled: " + operationHandle);
             case UKNOWN_STATE:
               throw new SQLException("Unknown error");
             case TIMEDOUT_STATE:
@@ -226,14 +256,12 @@ public class KyuubiStatement implements java.sql.Statement {
   private boolean executeWith(String sql, Map<String, String> confOverlay) throws SQLException {
     try {
       currentOperationHandle = runAsyncOnServer(sql, confOverlay);
-      TGetOperationStatusResp status = waitForOperationToComplete();
-      if (!status.isHasResultSet() && !currentOperationHandle.isHasResultSet()) {
-        // reset result to null
-        currentResultSet = null;
-      } else {
-        currentResultSet =
-            KyuubiResultSet.create(this, boundClient, currentOperationHandle, boundSessionHandle);
-      }
+      TGetOperationStatusResp statusResp = waitForOperationToComplete(currentOperationHandle);
+      currentResultSet =
+          !statusResp.isHasResultSet() && !currentOperationHandle.isHasResultSet()
+              ? null
+              : KyuubiResultSet.create(
+                  this, boundClient, currentOperationHandle, boundSessionHandle, fetchType);
       return currentResultSet != null;
     } catch (TException e) {
       throw new SQLException(e);
@@ -252,7 +280,7 @@ public class KyuubiStatement implements java.sql.Statement {
 
   @Override
   public int getUpdateCount() throws SQLException {
-    waitForOperationToComplete();
+    waitForOperationToComplete(currentOperationHandle);
     return -1;
   }
 

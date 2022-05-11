@@ -6,6 +6,7 @@ import org.apache.hadoop.hive.common.type.HiveIntervalDayTime;
 import org.apache.hadoop.hive.common.type.HiveIntervalYearMonth;
 import org.apache.hadoop.hive.serde2.thrift.Type;
 import org.apache.hive.service.cli.ColumnDescriptor;
+import org.apache.hive.service.cli.FetchType;
 import org.apache.hive.service.cli.RowSetFactory;
 import org.apache.hive.service.cli.TableSchema;
 import org.apache.hive.service.rpc.thrift.*;
@@ -39,11 +40,14 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   private final TOperationHandle boundOperationHandle;
   private final TSessionHandle boundSessionHandle;
 
+  private final FetchType fetchType;
+
   public static KyuubiResultSet create(
       KyuubiStatement statement,
       TCLIService.Iface client,
       TOperationHandle operationHandle,
-      TSessionHandle sessionHandle)
+      TSessionHandle sessionHandle,
+      FetchType fetchType)
       throws SQLException {
     TableSchema tableSchema = retrieveSchema(client, operationHandle);
 
@@ -51,16 +55,27 @@ public class KyuubiResultSet extends ReadonlyResultSet {
         statement,
         client,
         operationHandle,
+        fetchType,
         sessionHandle,
         tableSchema,
         statement.getMaxRows(),
         statement.getFetchSize());
   }
 
+  //  public static KyuubiResultSet create(
+  //      KyuubiStatement statement,
+  //      TCLIService.Iface client,
+  //      TOperationHandle operationHandle,
+  //      TSessionHandle sessionHandle)
+  //      throws SQLException {
+  //    return create(statement, client, operationHandle, sessionHandle, FetchType.QUERY_OUTPUT);
+  //  }
+
   private KyuubiResultSet(
       KyuubiStatement statement,
       TCLIService.Iface client,
       TOperationHandle operationHandle,
+      FetchType fetchType,
       TSessionHandle sessionHandle,
       TableSchema tableSchema,
       int maxRows,
@@ -70,6 +85,7 @@ public class KyuubiResultSet extends ReadonlyResultSet {
         (KyuubiConnection) statement.getConnection(),
         client,
         operationHandle,
+        fetchType,
         sessionHandle,
         tableSchema,
         maxRows,
@@ -81,6 +97,7 @@ public class KyuubiResultSet extends ReadonlyResultSet {
       KyuubiConnection connection,
       TCLIService.Iface client,
       TOperationHandle operationHandle,
+      FetchType fetchType,
       TSessionHandle sessionHandle,
       TableSchema tableSchema,
       int maxRows,
@@ -93,6 +110,7 @@ public class KyuubiResultSet extends ReadonlyResultSet {
     this.rowsIter = Collections.emptyIterator();
     this.boundClient = client;
     this.boundOperationHandle = operationHandle;
+    this.fetchType = fetchType;
     this.boundSessionHandle = sessionHandle;
     this.tableSchema = new KyuubiTableSchema(tableSchema);
     this.metaData = new KyuubiResultSetMetaData(this.tableSchema);
@@ -141,10 +159,12 @@ public class KyuubiResultSet extends ReadonlyResultSet {
           isBeforeFirst() ? TFetchOrientation.FETCH_FIRST : TFetchOrientation.FETCH_NEXT;
       TFetchResultsReq fetchReq =
           new TFetchResultsReq(boundOperationHandle, orientation, fetchSize);
+      fetchReq.setFetchType(fetchType.toTFetchType());
       try {
         TFetchResultsResp fetchResp = boundClient.FetchResults(fetchReq);
         Utils.throwIfFail(fetchResp.getStatus());
         TRowSet results = fetchResp.getResults();
+        System.out.println("result = " + results + " boundConnection = " + boundConnection);
         rowsIter = RowSetFactory.create(results, boundConnection.getProtocolVersion()).iterator();
       } catch (TException e) {
         throw new SQLException(e);
@@ -338,7 +358,7 @@ public class KyuubiResultSet extends ReadonlyResultSet {
       throw new Exception("Illegal conversion");
     } catch (Exception e) {
       throw new SQLException(
-              "Cannot convert column " + columnIndex + " to short: " + e.toString(), e);
+          "Cannot convert column " + columnIndex + " to short: " + e.toString(), e);
     }
   }
 
@@ -374,7 +394,7 @@ public class KyuubiResultSet extends ReadonlyResultSet {
       throw new Exception("Illegal conversion");
     } catch (Exception e) {
       throw new SQLException(
-              "Cannot convert column " + columnIndex + " to long: " + e.toString(), e);
+          "Cannot convert column " + columnIndex + " to long: " + e.toString(), e);
     }
   }
 
@@ -392,7 +412,7 @@ public class KyuubiResultSet extends ReadonlyResultSet {
       throw new Exception("Illegal conversion");
     } catch (Exception e) {
       throw new SQLException(
-              "Cannot convert column " + columnIndex + " to float: " + e.toString(), e);
+          "Cannot convert column " + columnIndex + " to float: " + e.toString(), e);
     }
   }
 
@@ -410,7 +430,7 @@ public class KyuubiResultSet extends ReadonlyResultSet {
       throw new Exception("Illegal conversion");
     } catch (Exception e) {
       throw new SQLException(
-              "Cannot convert column " + columnIndex + " to double: " + e.toString(), e);
+          "Cannot convert column " + columnIndex + " to double: " + e.toString(), e);
     }
   }
 
@@ -440,7 +460,7 @@ public class KyuubiResultSet extends ReadonlyResultSet {
       }
     } catch (Exception e) {
       throw new SQLException(
-              "Cannot convert column " + columnIndex + " to date: " + e.toString(), e);
+          "Cannot convert column " + columnIndex + " to date: " + e.toString(), e);
     }
     // If we fell through to here this is not a valid type conversion
     throw new SQLException("Cannot convert column " + columnIndex + " to date: Illegal conversion");
@@ -474,7 +494,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   @Override
   public InputStream getUnicodeStream(int columnIndex) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 
   @Override
@@ -648,37 +667,31 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   @Override
   public Object getObject(int columnIndex, Map<String, Class<?>> map) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 
   @Override
   public Ref getRef(int columnIndex) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 
   @Override
   public Clob getClob(int columnIndex) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 
   @Override
   public Object getObject(String columnLabel, Map<String, Class<?>> map) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 
   @Override
   public Ref getRef(String columnLabel) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 
   @Override
   public Clob getClob(String columnLabel) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 
   @Override
@@ -721,7 +734,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
-
   @Override
   public RowId getRowId(int columnIndex) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
@@ -731,6 +743,7 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   public RowId getRowId(String columnLabel) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
+
   @Override
   public int getHoldability() throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
@@ -784,7 +797,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   @Override
   public <T> T getObject(int columnIndex, Class<T> type) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 
   @Override

@@ -22,11 +22,9 @@ public class KyuubiDriver implements Driver {
 
   @Override
   public Connection connect(String url, Properties sessionProps) throws SQLException {
-    if (acceptsURL(url)) {
-      ConnectionInfo connectionInfo = ConnectionInfo.parse(url, sessionProps);
-      return new KyuubiConnection(connectionInfo).open();
-    }
-    throw new SQLFeatureNotSupportedException("KyuubiDriver not support this url " + url);
+    return acceptsURL(url)
+        ? new KyuubiConnection(ConnectionInfo.parse(url, sessionProps)).open()
+        : null;
   }
 
   @Override

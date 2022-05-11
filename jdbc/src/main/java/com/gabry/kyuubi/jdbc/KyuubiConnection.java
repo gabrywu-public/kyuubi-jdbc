@@ -1,10 +1,11 @@
 package com.gabry.kyuubi.jdbc;
 
 import com.gabry.kyuubi.common.Common;
-import com.gabry.kyuubi.utils.Utils;
 import com.gabry.kyuubi.driver.ConnectionInfo;
 import com.gabry.kyuubi.driver.HostInfo;
+import com.gabry.kyuubi.utils.Utils;
 import org.apache.hadoop.hive.common.auth.HiveAuthUtils;
+import org.apache.hive.service.cli.FetchType;
 import org.apache.hive.service.cli.HiveSQLException;
 import org.apache.hive.service.rpc.thrift.*;
 import org.apache.thrift.TException;
@@ -18,6 +19,7 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.nio.ByteBuffer;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.Executor;
@@ -25,7 +27,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
-public class KyuubiConnection implements java.sql.Connection {
+public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
   private static final Logger logger = LoggerFactory.getLogger(KyuubiConnection.class);
   private static final List<TProtocolVersion> supportedProtocols = new ArrayList<>(10);
 
@@ -49,12 +51,17 @@ public class KyuubiConnection implements java.sql.Connection {
   private TCLIService.Iface cliClient;
   private TProtocolVersion serverProtocolVersion;
   private TSessionHandle sessionHandle;
+  private KyuubiStatement execLogStatement;
+  private KyuubiResultSet execLogResultSet;
   private HostInfo connectedHost;
   private SQLWarning warningChain = null;
   private final Properties clientInfo;
+  private Thread engineLogThread;
+  private boolean stopping;
 
   public KyuubiConnection(ConnectionInfo connectionInfo) {
     this.connectionInfo = connectionInfo;
+    this.stopping = false;
     long timeOut = TimeUnit.SECONDS.toMillis(DriverManager.getLoginTimeout());
     if (timeOut > Integer.MAX_VALUE) {
       loginTimeout = Integer.MAX_VALUE;
@@ -126,6 +133,22 @@ public class KyuubiConnection implements java.sql.Connection {
 
   private TTransport createUnderlyingTransport(HostInfo hostInfo) {
     return HiveAuthUtils.getSocketTransport(hostInfo.getHost(), hostInfo.getPort(), loginTimeout);
+  }
+
+  @Override
+  public boolean hasMoreLogs() {
+    boolean hasLogs = false;
+    try {
+      hasLogs = execLogResultSet.next();
+    } catch (SQLException e) {
+      logger.error("can't get engine log {}", e.getMessage(), e);
+    }
+    return hasLogs;
+  }
+
+  @Override
+  public List<String> getExecLog() throws SQLException {
+    return Collections.singletonList(execLogResultSet.getString(1));
   }
 
   private static class Tupple2<T1, T2> {
@@ -210,9 +233,20 @@ public class KyuubiConnection implements java.sql.Connection {
       TCLIService.Iface underlyingClient = new TCLIService.Client(new TBinaryProtocol(transport));
       cliClient = newSynchronizedClient(underlyingClient);
       try {
-        Tupple2<TSessionHandle, TProtocolVersion> sessionResult = openSession();
-        sessionHandle = sessionResult.first;
-        serverProtocolVersion = sessionResult.second;
+        OpenedSessionInfo sessionResult = openSession();
+        serverProtocolVersion = sessionResult.getProtocolVersion();
+
+        execLogStatement =
+            KyuubiStatement.createStatementForOperation(
+                this,
+                cliClient,
+                sessionHandle,
+                sessionResult.getLaunchEngineOperationHandle(),
+                FetchType.LOG);
+        execLogResultSet = execLogStatement.executeOperation();
+        printLaunchEngineLogInBackend();
+        execLogStatement.waitForOperationToComplete();
+        sessionHandle = sessionResult.getSessionHandle();
       } catch (TException e) {
         throw new SQLException("can't open session " + e.getMessage(), e);
       }
@@ -223,41 +257,89 @@ public class KyuubiConnection implements java.sql.Connection {
     return this;
   }
 
+  private void printLaunchEngineLogInBackend() {
+    logger.info("Starting to get launch engine log.");
+    engineLogThread =
+        new Thread("print-engine-launch-log") {
+          @Override
+          public void run() {
+            while (!stopping && hasMoreLogs()) {
+              try {
+                getExecLog().forEach(line -> logger.info("from engine: {}", line));
+                Thread.sleep(500);
+              } catch (Exception e) {
+                logger.warn("failed to get engine log {}", e.getMessage(), e);
+              }
+            }
+            logger.info("Finished to get launch engine log.");
+          }
+        };
+    engineLogThread.start();
+  }
+
   public TProtocolVersion getProtocolVersion() {
     return serverProtocolVersion;
   }
 
-  private Tupple2<TSessionHandle, TProtocolVersion> openSession()
-      throws TException, HiveSQLException {
+  private static class OpenedSessionInfo {
+    private TSessionHandle sessionHandle;
+    private TProtocolVersion protocolVersion;
+    private Map<String, String> returnedConf;
+    private TOperationHandle launchEngineOperationHandle;
+
+    private OpenedSessionInfo(
+        TSessionHandle tSessionHandle,
+        TProtocolVersion protocolVersion,
+        Map<String, String> returnedConf) {
+      this.sessionHandle = tSessionHandle;
+      this.protocolVersion = protocolVersion;
+      this.returnedConf = returnedConf;
+      String launchEngineOpHandleGuid = returnedConf.get(Common.KyuubiGuidKey());
+      String launchEngineOpHandleSecret = returnedConf.get(Common.KyuubiSecretKey());
+
+      if (launchEngineOpHandleGuid != null && launchEngineOpHandleSecret != null) {
+        byte[] guidBytes = Base64.getMimeDecoder().decode(launchEngineOpHandleGuid);
+        byte[] secretBytes = Base64.getMimeDecoder().decode(launchEngineOpHandleSecret);
+        THandleIdentifier handleIdentifier =
+            new THandleIdentifier(ByteBuffer.wrap(guidBytes), ByteBuffer.wrap(secretBytes));
+        launchEngineOperationHandle =
+            new TOperationHandle(handleIdentifier, TOperationType.UNKNOWN, true);
+      }
+    }
+
+    public TSessionHandle getSessionHandle() {
+      return sessionHandle;
+    }
+
+    public TProtocolVersion getProtocolVersion() {
+      return protocolVersion;
+    }
+
+    public Map<String, String> getReturnedConf() {
+      return returnedConf;
+    }
+
+    public TOperationHandle getLaunchEngineOperationHandle() {
+      return launchEngineOperationHandle;
+    }
+  }
+
+  private OpenedSessionInfo openSession() throws TException, HiveSQLException {
     TOpenSessionReq openReq = new TOpenSessionReq();
     TOpenSessionResp openResp = cliClient.OpenSession(openReq);
     Utils.throwIfFail(openResp.getStatus());
     if (!supportedProtocols.contains(openResp.getServerProtocolVersion())) {
       throw new TException("Unsupported Hive2 protocol");
     }
-    TProtocolVersion serverProtocolVer = openResp.getServerProtocolVersion();
-    TSessionHandle tSessionHandle = openResp.getSessionHandle();
-    Map<String, String> openRespConf = openResp.getConfiguration();
-    logger.debug("configuration from server {}", openRespConf);
-    String launchEngineOpHandleGuid = openRespConf.get(Common.KyuubiGuidKey());
-    String launchEngineOpHandleSecret = openRespConf.get(Common.KyuubiSecretKey());
-
-    if (launchEngineOpHandleGuid != null && launchEngineOpHandleSecret != null) {
-      try {
-        byte[] guidBytes = Base64.getMimeDecoder().decode(launchEngineOpHandleGuid);
-        byte[] secretBytes = Base64.getMimeDecoder().decode(launchEngineOpHandleSecret);
-        logger.info("launch handle guid {}", guidBytes);
-        logger.info("launch handle secret {}", secretBytes);
-      } catch (Exception e) {
-        logger.error("Failed to decode launch engine operation handle from open session resp", e);
-      }
-    }
-
-    return new Tupple2<>(tSessionHandle, serverProtocolVer);
+    return new OpenedSessionInfo(
+        openResp.getSessionHandle(),
+        openResp.getServerProtocolVersion(),
+        openResp.getConfiguration());
   }
 
   @Override
   public void close() throws SQLException {
+    stopping = true;
     if (cliClient != null) {
       TCloseSessionReq closeReq = new TCloseSessionReq(sessionHandle);
       try {
@@ -499,18 +581,16 @@ public class KyuubiConnection implements java.sql.Connection {
   @Override
   public Array createArrayOf(String typeName, Object[] elements) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 
   @Override
   public Struct createStruct(String typeName, Object[] attributes) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 
   @Override
   public void setSchema(String schema) throws SQLException {
-    try(Statement stmt = createStatement()){
+    try (Statement stmt = createStatement()) {
       stmt.execute("use " + schema);
     }
   }
@@ -518,7 +598,7 @@ public class KyuubiConnection implements java.sql.Connection {
   @Override
   public String getSchema() throws SQLException {
     try (Statement stmt = createStatement();
-         ResultSet res = stmt.executeQuery("SELECT current_database()")) {
+        ResultSet res = stmt.executeQuery("SELECT current_database()")) {
       if (!res.next()) {
         throw new SQLException("Failed to get schema information");
       }
@@ -544,12 +624,10 @@ public class KyuubiConnection implements java.sql.Connection {
   @Override
   public <T> T unwrap(Class<T> iface) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 
   @Override
   public boolean isWrapperFor(Class<?> iface) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
-
   }
 }

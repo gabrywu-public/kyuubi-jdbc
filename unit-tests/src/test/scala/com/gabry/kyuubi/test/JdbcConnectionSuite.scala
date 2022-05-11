@@ -1,5 +1,6 @@
 package com.gabry.kyuubi.test
 
+import com.gabry.kyuubi.driver.ConnectionInfo
 import com.gabry.kyuubi.jdbc.KyuubiConnection
 import org.apache.kyuubi.config.KyuubiConf
 
@@ -23,5 +24,12 @@ class JdbcConnectionSuite extends WithKyuubiServer with WithJdbcDriver {
       assert(!resultSet.next)
       resultSet.close()
     }
+  }
+  test("test open"){
+    val connectionInfo = ConnectionInfo.parse(s"jdbc:kyuubi://${getConnectionUrl}/default")
+    val connection = new KyuubiConnection(connectionInfo)
+    assert(connection.isClosed)
+    connection.open()
+    assert(!connection.isClosed)
   }
 }
