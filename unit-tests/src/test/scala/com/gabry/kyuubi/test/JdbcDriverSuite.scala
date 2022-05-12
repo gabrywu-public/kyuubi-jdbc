@@ -1,7 +1,7 @@
 package com.gabry.kyuubi.test
 
 import com.gabry.kyuubi.driver.KyuubiDriver
-import com.gabry.kyuubi.utils.DriverCommon
+import com.gabry.kyuubi.utils.Commons
 import org.scalatest.funsuite.AnyFunSuite
 
 import java.sql.{DriverManager, SQLException, SQLFeatureNotSupportedException}
@@ -10,9 +10,9 @@ class JdbcDriverSuite extends AnyFunSuite {
 
   test("accept url") {
     val kyuubiDriver = new KyuubiDriver
-    assert(kyuubiDriver.acceptsURL(DriverCommon.JDBC_URL_PREFIX))
-    assert(kyuubiDriver.acceptsURL(DriverCommon.JDBC_URL_PREFIX + "localhost:port"))
-    assert(!kyuubiDriver.acceptsURL("localhost:port" + DriverCommon.JDBC_URL_PREFIX))
+    assert(kyuubiDriver.acceptsURL(Commons.JDBC_URL_PREFIX))
+    assert(kyuubiDriver.acceptsURL(Commons.JDBC_URL_PREFIX + "localhost:port"))
+    assert(!kyuubiDriver.acceptsURL("localhost:port" + Commons.JDBC_URL_PREFIX))
   }
 
   test("connect invalid jdbc") {

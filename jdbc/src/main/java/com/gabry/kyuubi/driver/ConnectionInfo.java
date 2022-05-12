@@ -4,10 +4,7 @@ import com.gabry.kyuubi.driver.exception.JdbcUrlParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -179,7 +176,7 @@ public class ConnectionInfo {
                     sessionConfigs.substring(SESSION_CONFIGS_PREFIX.length()).split(";", -1))
                 .map(config -> config.split("=", -1))
                 .collect(Collectors.toMap(m -> m[0], m -> m[1]))
-            : Collections.emptyMap();
+            : new HashMap<>(0);
 
     if (sessionProps != null) {
       sessionProps.forEach(

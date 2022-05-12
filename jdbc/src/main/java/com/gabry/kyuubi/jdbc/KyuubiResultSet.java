@@ -5,12 +5,11 @@ import com.gabry.kyuubi.utils.Utils;
 import org.apache.hadoop.hive.common.type.HiveIntervalDayTime;
 import org.apache.hadoop.hive.common.type.HiveIntervalYearMonth;
 import org.apache.hadoop.hive.serde2.thrift.Type;
-import org.apache.hive.service.cli.ColumnDescriptor;
-import org.apache.hive.service.cli.FetchType;
-import org.apache.hive.service.cli.RowSetFactory;
-import org.apache.hive.service.cli.TableSchema;
+import org.apache.hive.service.cli.*;
 import org.apache.hive.service.rpc.thrift.*;
 import org.apache.thrift.TException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -26,6 +25,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 public class KyuubiResultSet extends ReadonlyResultSet {
+  private static final Logger logger = LoggerFactory.getLogger(KyuubiResultSet.class);
   protected final KyuubiConnection boundConnection;
   protected final KyuubiStatement boundStatement;
   protected final int maxRows;
@@ -61,15 +61,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
         statement.getMaxRows(),
         statement.getFetchSize());
   }
-
-  //  public static KyuubiResultSet create(
-  //      KyuubiStatement statement,
-  //      TCLIService.Iface client,
-  //      TOperationHandle operationHandle,
-  //      TSessionHandle sessionHandle)
-  //      throws SQLException {
-  //    return create(statement, client, operationHandle, sessionHandle, FetchType.QUERY_OUTPUT);
-  //  }
 
   private KyuubiResultSet(
       KyuubiStatement statement,
@@ -164,10 +155,9 @@ public class KyuubiResultSet extends ReadonlyResultSet {
         TFetchResultsResp fetchResp = boundClient.FetchResults(fetchReq);
         Utils.throwIfFail(fetchResp.getStatus());
         TRowSet results = fetchResp.getResults();
-        System.out.println("result = " + results + " boundConnection = " + boundConnection);
         rowsIter = RowSetFactory.create(results, boundConnection.getProtocolVersion()).iterator();
       } catch (TException e) {
-        throw new SQLException(e);
+        throw new SQLException("failed to fetch result {}", e.getMessage(), e);
       }
     }
     currentRow = rowsIter.hasNext() ? rowsIter.next() : null;

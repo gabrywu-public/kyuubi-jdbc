@@ -4,6 +4,9 @@ import org.apache.hive.service.cli.HiveSQLException;
 import org.apache.hive.service.rpc.thrift.TStatus;
 import org.apache.hive.service.rpc.thrift.TStatusCode;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+
 public class Utils {
   private Utils() {
     // do nothing

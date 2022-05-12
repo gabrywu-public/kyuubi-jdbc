@@ -1,7 +1,7 @@
 package com.gabry.kyuubi.driver;
 
 import com.gabry.kyuubi.jdbc.KyuubiConnection;
-import com.gabry.kyuubi.utils.DriverCommon;
+import com.gabry.kyuubi.utils.Commons;
 
 import java.io.IOException;
 import java.sql.*;
@@ -29,7 +29,7 @@ public class KyuubiDriver implements Driver {
 
   @Override
   public boolean acceptsURL(String url) throws SQLException {
-    return url != null && url.startsWith(DriverCommon.JDBC_URL_PREFIX);
+    return url != null && url.startsWith(Commons.JDBC_URL_PREFIX);
   }
 
   @Override

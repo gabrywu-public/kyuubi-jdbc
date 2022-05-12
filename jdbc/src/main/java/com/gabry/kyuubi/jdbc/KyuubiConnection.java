@@ -3,10 +3,16 @@ package com.gabry.kyuubi.jdbc;
 import com.gabry.kyuubi.common.Common;
 import com.gabry.kyuubi.driver.ConnectionInfo;
 import com.gabry.kyuubi.driver.HostInfo;
+import com.gabry.kyuubi.utils.Commons;
 import com.gabry.kyuubi.utils.Utils;
 import org.apache.hadoop.hive.common.auth.HiveAuthUtils;
+import org.apache.hive.service.auth.HiveAuthConstants;
+import org.apache.hive.service.auth.KerberosSaslHelper;
+import org.apache.hive.service.auth.PlainSaslHelper;
+import org.apache.hive.service.auth.SaslQOP;
 import org.apache.hive.service.cli.FetchType;
 import org.apache.hive.service.cli.HiveSQLException;
+import org.apache.hive.service.cli.session.SessionUtils;
 import org.apache.hive.service.rpc.thrift.*;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TBinaryProtocol;
@@ -15,6 +21,8 @@ import org.apache.thrift.transport.TTransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.security.sasl.Sasl;
+import java.io.IOException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -22,12 +30,11 @@ import java.lang.reflect.Proxy;
 import java.nio.ByteBuffer;
 import java.sql.*;
 import java.util.*;
-import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
-public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
+public class KyuubiConnection extends AbstractKyuubiConnection {
   private static final Logger logger = LoggerFactory.getLogger(KyuubiConnection.class);
   private static final List<TProtocolVersion> supportedProtocols = new ArrayList<>(11);
 
@@ -50,18 +57,16 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
   private final ConnectionInfo connectionInfo;
   private final int fetchSize;
   private final int loginTimeout;
-  private TTransport transport;
   private TCLIService.Iface cliClient;
-  private TProtocolVersion serverProtocolVersion;
-  private TSessionHandle sessionHandle;
   private KyuubiStatement execLogStatement;
   private KyuubiResultSet execLogResultSet;
-  private HostInfo connectedHost;
+  private OpenedTransport openedTransport;
+  private OpenedSessionInfo openedSessionInfo;
   private SQLWarning warningChain = null;
   private final Properties clientInfo;
   private Thread engineLogThread;
   private boolean stopping;
-  private boolean isBeeLineMode;
+  private final boolean isBeeLineMode;
 
   public KyuubiConnection(ConnectionInfo connectionInfo) {
     this.connectionInfo = connectionInfo;
@@ -73,9 +78,11 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
       loginTimeout = (int) timeOut;
     }
     fetchSize =
-        connectionInfo.getSessionConfigs().containsKey("fetchSize")
-            ? Integer.parseInt(connectionInfo.getSessionConfigs().get("fetchSize"))
-            : KyuubiStatement.DEFAULT_FETCH_SIZE;
+        Integer.parseInt(
+            connectionInfo
+                .getSessionConfigs()
+                .getOrDefault(
+                    Commons.SESSION_FETCH_SIZE_KEY, "" + KyuubiStatement.DEFAULT_FETCH_SIZE));
     clientInfo = new Properties();
     isBeeLineMode =
         Boolean.parseBoolean(connectionInfo.getSessionConfigs().get(BEELINE_MODE_PROPERTY));
@@ -90,22 +97,12 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
   @Override
   public Statement createStatement() throws SQLException {
     checkOpen();
-    return new KyuubiStatement(this, cliClient, sessionHandle, fetchSize);
+    return new KyuubiStatement(this, cliClient, openedSessionInfo.sessionHandle, fetchSize);
   }
 
   @Override
   public PreparedStatement prepareStatement(String sql) throws SQLException {
-    return new KyuubiPreparedStatement(this, cliClient, sessionHandle, sql);
-  }
-
-  @Override
-  public CallableStatement prepareCall(String sql) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public String nativeSQL(String sql) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
+    return new KyuubiPreparedStatement(this, cliClient, openedSessionInfo.sessionHandle, sql);
   }
 
   @Override
@@ -123,64 +120,95 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
     return true;
   }
 
-  @Override
-  public void commit() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public void rollback() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
   private HostInfo getServerHost() {
     return connectionInfo.getHosts()[0];
   }
 
   private TTransport createUnderlyingTransport(HostInfo hostInfo) {
-    return HiveAuthUtils.getSocketTransport(hostInfo.getHost(), hostInfo.getPort(), loginTimeout);
+    return HiveAuthUtils.getSocketTransport(
+        hostInfo.getCanonicalHost(), hostInfo.getPort(), loginTimeout);
   }
 
-  @Override
-  public boolean hasMoreLogs() {
-    boolean hasLogs = false;
-    try {
-      hasLogs = execLogResultSet.next();
-    } catch (SQLException e) {
-      logger.error("can't get engine log {}", e.getMessage(), e);
-    }
-    return hasLogs;
-  }
+  private static class OpenedTransport {
+    private final TTransport transport;
+    private final HostInfo hostInfo;
 
-  @Override
-  public List<String> getExecLog() throws SQLException {
-    return Collections.singletonList(execLogResultSet.getString(1));
-  }
-
-  private static class Tupple2<T1, T2> {
-    public final T1 first;
-    public final T2 second;
-
-    public Tupple2(T1 first, T2 second) {
-      this.first = first;
-      this.second = second;
+    public OpenedTransport(TTransport transport, HostInfo hostInfo) {
+      this.transport = transport;
+      this.hostInfo = hostInfo;
     }
   }
 
-  private Tupple2<TTransport, HostInfo> createAndOpenBinaryTransport() throws TTransportException {
-    Tupple2<TTransport, HostInfo> result = null;
+  private OpenedTransport createAndOpenBinaryTransport()
+      throws TTransportException, SQLException, IOException {
+    OpenedTransport result = null;
+    TTransport transport;
     for (HostInfo hostInfo : connectionInfo.getHosts()) {
       logger.info("trying to connect to {}", hostInfo);
-      TTransport socketTransport = createUnderlyingTransport(hostInfo);
-      // KerberosSaslHelper.getKerberosTransport
-      if (!socketTransport.isOpen()) {
+      TTransport underlyingTransport = createUnderlyingTransport(hostInfo);
+      KyuubiAuthEnum authType =
+          KyuubiAuthEnum.from(
+              connectionInfo.getSessionConfigs().get(Commons.SESSION_AUTH_TYPE_KEY));
+      if (authType != KyuubiAuthEnum.AUTH_SIMPLE && authType != KyuubiAuthEnum.UNKNOWN) {
+        Map<String, String> saslProps = new HashMap<String, String>();
+        SaslQOP saslQOP = SaslQOP.AUTH;
+        if (connectionInfo.getSessionConfigs().containsKey(Commons.SESSION_AUTH_QOP_KEY)) {
+          try {
+            saslQOP =
+                SaslQOP.fromString(
+                    connectionInfo.getSessionConfigs().get(Commons.SESSION_AUTH_QOP_KEY));
+          } catch (IllegalArgumentException e) {
+            throw new SQLException(
+                "Invalid " + Commons.SESSION_AUTH_QOP_KEY + " parameter. " + e.getMessage(),
+                "42000",
+                e);
+          }
+          saslProps.put(Sasl.QOP, saslQOP.toString());
+        } else {
+          saslProps.put(Sasl.QOP, "auth-conf,auth-int,auth");
+        }
+        saslProps.put(Sasl.SERVER_AUTH, "true");
+        if (connectionInfo.getSessionConfigs().containsKey(Commons.SESSION_AUTH_PRINCIPAL_KEY)) {
+          boolean assumeSubject =
+              "fromSubject"
+                  .equalsIgnoreCase(
+                      connectionInfo
+                          .getSessionConfigs()
+                          .get(Commons.SESSION_KERBEROS_AUTH_TYPE_KEY));
+          transport =
+              KerberosSaslHelper.getKerberosTransport(
+                  connectionInfo.getSessionConfigs().get(Commons.SESSION_AUTH_PRINCIPAL_KEY),
+                  hostInfo.getCanonicalHost(),
+                  underlyingTransport,
+                  saslProps,
+                  assumeSubject);
+        } else {
+          String tokenStr = null;
+          if (authType == KyuubiAuthEnum.AUTH_TOKEN) {
+            tokenStr = SessionUtils.getTokenStrForm(HiveAuthConstants.HS2_CLIENT_TOKEN);
+          }
+          if (tokenStr != null) {
+            transport =
+                KerberosSaslHelper.getTokenTransport(
+                    tokenStr, hostInfo.getCanonicalHost(), underlyingTransport, saslProps);
+          } else {
+            transport =
+                PlainSaslHelper.getPlainTransport(
+                    connectionInfo.getUser(), connectionInfo.getPassword(), underlyingTransport);
+          }
+        }
+      } else {
+        transport = underlyingTransport;
+      }
+
+      if (!transport.isOpen()) {
         try {
-          socketTransport.open();
-          result = new Tupple2<>(socketTransport, hostInfo);
+          transport.open();
+          result = new OpenedTransport(transport, hostInfo);
           break;
         } catch (TTransportException e) {
-          logger.error("can't connect to {} because of {}", hostInfo, e.getMessage(), e);
-          Utils.cleanup(socketTransport);
+          logger.error("can't connect to {} because {} try next", hostInfo, e.getMessage(), e);
+          Utils.cleanup(transport);
         }
       }
     }
@@ -232,35 +260,38 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
 
   public KyuubiConnection open() throws SQLException {
     try {
-      Tupple2<TTransport, HostInfo> result = createAndOpenBinaryTransport();
-      transport = result.first;
-      connectedHost = result.second;
-      logger.info("connected to {}:{}", connectedHost.getHost(), connectedHost.getPort());
-      TCLIService.Iface underlyingClient = new TCLIService.Client(new TBinaryProtocol(transport));
+      openedTransport = createAndOpenBinaryTransport();
+
+      logger.info("connected to {}", openedTransport.hostInfo);
+      TCLIService.Iface underlyingClient =
+          new TCLIService.Client(new TBinaryProtocol(openedTransport.transport));
       cliClient = newSynchronizedClient(underlyingClient);
       try {
-        OpenedSessionInfo sessionResult = openSession();
-        serverProtocolVersion = sessionResult.getProtocolVersion();
-
+        openedSessionInfo = openSession();
         if (!isBeeLineMode) {
           execLogStatement =
               KyuubiStatement.createStatementForOperation(
                   this,
                   cliClient,
-                  sessionHandle,
-                  sessionResult.getLaunchEngineOperationHandle(),
+                  openedSessionInfo.sessionHandle,
+                  openedSessionInfo.launchEngineOperationHandle,
+                  fetchSize,
                   FetchType.LOG);
+
           execLogResultSet = execLogStatement.executeOperation();
+          setLogsResultSet(execLogResultSet);
           printLaunchEngineLogInBackend();
           execLogStatement.waitForOperationToComplete();
+          execLogStatement.close();
         }
-
-        sessionHandle = sessionResult.getSessionHandle();
       } catch (TException e) {
         throw new SQLException("can't open session " + e.getMessage(), e);
       }
-      logger.info("open session {} to {} successfully", sessionHandle, connectedHost);
-    } catch (TTransportException e) {
+      logger.info(
+          "open session {} to {} successfully",
+          openedSessionInfo.sessionHandle,
+          openedTransport.hostInfo);
+    } catch (TTransportException | IOException e) {
       throw new SQLException(e);
     }
     return this;
@@ -272,14 +303,15 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
         new Thread("print-engine-launch-log") {
           @Override
           public void run() {
-            while (!stopping && hasMoreLogs()) {
-              try {
-                getExecLog().forEach(logger::info);
+            try {
+              while (!stopping && hasMoreLogs()) {
+                getExecLog().forEach(line -> logger.info("engine log {}", line));
                 Thread.sleep(500);
-              } catch (Exception e) {
-                logger.warn("failed to get engine log {}", e.getMessage(), e);
               }
+            } catch (Exception e) {
+              logger.info("failed to get engine log, the process maybe finish: {}", e.getMessage());
             }
+
             logger.info("Finished to get launch engine log.");
           }
         };
@@ -287,14 +319,14 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
   }
 
   public TProtocolVersion getProtocolVersion() {
-    return serverProtocolVersion;
+    return openedSessionInfo.protocolVersion;
   }
 
   private static class OpenedSessionInfo {
-    private TSessionHandle sessionHandle;
-    private TProtocolVersion protocolVersion;
-    private Map<String, String> returnedConf;
-    private TOperationHandle launchEngineOperationHandle;
+    private final TSessionHandle sessionHandle;
+    private final TProtocolVersion protocolVersion;
+    // private Map<String, String> returnedConf;
+    private final TOperationHandle launchEngineOperationHandle;
 
     private OpenedSessionInfo(
         TSessionHandle tSessionHandle,
@@ -302,7 +334,7 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
         Map<String, String> returnedConf) {
       this.sessionHandle = tSessionHandle;
       this.protocolVersion = protocolVersion;
-      this.returnedConf = returnedConf;
+      //  this.returnedConf = returnedConf;
       String launchEngineOpHandleGuid = returnedConf.get(Common.KyuubiGuidKey());
       String launchEngineOpHandleSecret = returnedConf.get(Common.KyuubiSecretKey());
 
@@ -313,23 +345,9 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
             new THandleIdentifier(ByteBuffer.wrap(guidBytes), ByteBuffer.wrap(secretBytes));
         launchEngineOperationHandle =
             new TOperationHandle(handleIdentifier, TOperationType.UNKNOWN, true);
+      } else {
+        launchEngineOperationHandle = null;
       }
-    }
-
-    public TSessionHandle getSessionHandle() {
-      return sessionHandle;
-    }
-
-    public TProtocolVersion getProtocolVersion() {
-      return protocolVersion;
-    }
-
-    public Map<String, String> getReturnedConf() {
-      return returnedConf;
-    }
-
-    public TOperationHandle getLaunchEngineOperationHandle() {
-      return launchEngineOperationHandle;
     }
   }
 
@@ -350,18 +368,18 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
   public void close() throws SQLException {
     stopping = true;
     if (cliClient != null) {
-      TCloseSessionReq closeReq = new TCloseSessionReq(sessionHandle);
+      TCloseSessionReq closeReq = new TCloseSessionReq(openedSessionInfo.sessionHandle);
       try {
         TCloseSessionResp resp = cliClient.CloseSession(closeReq);
-        logger.info("disconnect to {} successfully {}", connectedHost, resp);
+        logger.info("disconnect to {} successfully {}", openedTransport.hostInfo, resp);
+        closeLog();
       } catch (TException e) {
         throw new SQLException("fail to cleanup server resources: " + e.getMessage(), e);
       } finally {
-        Utils.cleanup(transport);
-        sessionHandle = null;
+        Utils.cleanup(openedTransport.transport);
+        openedSessionInfo = null;
         cliClient = null;
-        transport = null;
-        connectedHost = null;
+        openedTransport = null;
       }
     }
   }
@@ -373,12 +391,7 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
 
   @Override
   public DatabaseMetaData getMetaData() throws SQLException {
-    return new KyuubiDatabaseMetaData(this, cliClient, sessionHandle);
-  }
-
-  @Override
-  public void setReadOnly(boolean readOnly) throws SQLException {
-    throw new SQLException("Enabling read-only mode not supported");
+    return new KyuubiDatabaseMetaData(this, cliClient, openedSessionInfo.sessionHandle);
   }
 
   @Override
@@ -387,15 +400,9 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
   }
 
   @Override
-  public void setCatalog(String catalog) throws SQLException {}
-
-  @Override
   public String getCatalog() throws SQLException {
     return "";
   }
-
-  @Override
-  public void setTransactionIsolation(int level) throws SQLException {}
 
   @Override
   public int getTransactionIsolation() throws SQLException {
@@ -425,114 +432,14 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
           "Statement with resultset type " + resultSetType + " is not supported",
           "HYC00"); // Optional feature not implemented
     }
-    return new KyuubiStatement(this, cliClient, sessionHandle, fetchSize);
+    return new KyuubiStatement(this, cliClient, openedSessionInfo.sessionHandle, fetchSize);
   }
 
   @Override
   public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency)
       throws SQLException {
-    return new KyuubiPreparedStatement(this, cliClient, sessionHandle, sql);
-  }
-
-  @Override
-  public CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency)
-      throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Map<String, Class<?>> getTypeMap() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public void setTypeMap(Map<String, Class<?>> map) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public void setHoldability(int holdability) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public int getHoldability() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Savepoint setSavepoint() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Savepoint setSavepoint(String name) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public void rollback(Savepoint savepoint) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public void releaseSavepoint(Savepoint savepoint) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Statement createStatement(
-      int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public PreparedStatement prepareStatement(
-      String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability)
-      throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public CallableStatement prepareCall(
-      String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability)
-      throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public PreparedStatement prepareStatement(String sql, int autoGeneratedKeys) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public PreparedStatement prepareStatement(String sql, int[] columnIndexes) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public PreparedStatement prepareStatement(String sql, String[] columnNames) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Clob createClob() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Blob createBlob() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public NClob createNClob() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public SQLXML createSQLXML() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
+    checkOpen();
+    return new KyuubiPreparedStatement(this, cliClient, openedSessionInfo.sessionHandle, sql);
   }
 
   @Override
@@ -540,7 +447,8 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
     boolean rc = false;
     try {
       String productName =
-          new KyuubiDatabaseMetaData(this, cliClient, sessionHandle).getDatabaseProductName();
+          new KyuubiDatabaseMetaData(this, cliClient, openedSessionInfo.sessionHandle)
+              .getDatabaseProductName();
       logger.debug("current connection is valid {}", productName);
       rc = true;
     } catch (SQLException ignore) {
@@ -556,7 +464,7 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
 
   private void updateClientInfo() throws SQLClientInfoException {
     try {
-      TSetClientInfoReq req = new TSetClientInfoReq(sessionHandle);
+      TSetClientInfoReq req = new TSetClientInfoReq(openedSessionInfo.sessionHandle);
       Map<String, String> clientInfoMap =
           clientInfo.entrySet().stream()
               .collect(Collectors.toMap(x -> x.getKey().toString(), x -> x.getValue().toString()));
@@ -588,16 +496,6 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
   }
 
   @Override
-  public Array createArrayOf(String typeName, Object[] elements) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Struct createStruct(String typeName, Object[] attributes) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public void setSchema(String schema) throws SQLException {
     try (Statement stmt = createStatement()) {
       stmt.execute("use " + schema);
@@ -613,30 +511,5 @@ public class KyuubiConnection implements java.sql.Connection, IKyuubiLoggable {
       }
       return res.getString(1);
     }
-  }
-
-  @Override
-  public void abort(Executor executor) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public void setNetworkTimeout(Executor executor, int milliseconds) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public int getNetworkTimeout() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public <T> T unwrap(Class<T> iface) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public boolean isWrapperFor(Class<?> iface) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 }
