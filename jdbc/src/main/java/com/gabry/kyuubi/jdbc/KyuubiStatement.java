@@ -290,6 +290,9 @@ public class KyuubiStatement extends AbstractKyuubiStatement {
 
   @Override
   public ResultSet getResultSet() throws SQLException {
+    if (currentResultSet == null) {
+      throw new SQLException("there is not a running SQL or operation");
+    }
     return currentResultSet;
   }
 
@@ -337,5 +340,13 @@ public class KyuubiStatement extends AbstractKyuubiStatement {
   @Override
   public boolean isCloseOnCompletion() throws SQLException {
     return false;
+  }
+
+  @Override
+  public ResultSet executeScala(String code) throws SQLException {
+    if (!executeWith(code, Collections.singletonMap("kyuubi.operation.language", "SCALA"))) {
+      throw new SQLException("The query did not generate a result set!");
+    }
+    return getResultSet();
   }
 }

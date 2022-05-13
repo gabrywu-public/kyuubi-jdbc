@@ -1,20 +1,11 @@
 package com.gabry.kyuubi.jdbc;
 
 import java.sql.*;
+import java.util.Collections;
 
 public abstract class AbstractKyuubiStatement extends AbstractKyuubiLoggable implements Statement {
   @Override
   public ResultSet executeQuery(String sql) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public int executeUpdate(String sql) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public void close() throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
@@ -29,32 +20,7 @@ public abstract class AbstractKyuubiStatement extends AbstractKyuubiLoggable imp
   }
 
   @Override
-  public int getMaxRows() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public void setMaxRows(int max) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public void setEscapeProcessing(boolean enable) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public int getQueryTimeout() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public void setQueryTimeout(int seconds) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public void cancel() throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
@@ -70,16 +36,6 @@ public abstract class AbstractKyuubiStatement extends AbstractKyuubiLoggable imp
 
   @Override
   public void setCursorName(String name) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public boolean execute(String sql) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public ResultSet getResultSet() throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
@@ -104,22 +60,7 @@ public abstract class AbstractKyuubiStatement extends AbstractKyuubiLoggable imp
   }
 
   @Override
-  public void setFetchSize(int rows) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public int getFetchSize() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public int getResultSetConcurrency() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public int getResultSetType() throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
@@ -189,27 +130,12 @@ public abstract class AbstractKyuubiStatement extends AbstractKyuubiLoggable imp
   }
 
   @Override
-  public boolean isClosed() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public void setPoolable(boolean poolable) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
-  public boolean isPoolable() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public void closeOnCompletion() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public boolean isCloseOnCompletion() throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
@@ -262,4 +188,5 @@ public abstract class AbstractKyuubiStatement extends AbstractKyuubiLoggable imp
   public boolean isWrapperFor(Class<?> iface) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
+  public abstract ResultSet executeScala(String code) throws SQLException ;
 }
