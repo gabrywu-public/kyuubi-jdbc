@@ -5,7 +5,10 @@ import com.gabry.kyuubi.utils.Utils;
 import org.apache.hadoop.hive.common.type.HiveIntervalDayTime;
 import org.apache.hadoop.hive.common.type.HiveIntervalYearMonth;
 import org.apache.hadoop.hive.serde2.thrift.Type;
-import org.apache.hive.service.cli.*;
+import org.apache.hive.service.cli.ColumnDescriptor;
+import org.apache.hive.service.cli.FetchType;
+import org.apache.hive.service.cli.RowSetFactory;
+import org.apache.hive.service.cli.TableSchema;
 import org.apache.hive.service.rpc.thrift.*;
 import org.apache.thrift.TException;
 import org.slf4j.Logger;
@@ -13,18 +16,14 @@ import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.io.Reader;
 import java.math.BigDecimal;
 import java.math.MathContext;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
-import java.util.Calendar;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.Map;
 
-public class KyuubiResultSet extends ReadonlyResultSet {
+public class KyuubiResultSet extends AbstractKyuubiResultSet {
   private static final Logger logger = LoggerFactory.getLogger(KyuubiResultSet.class);
   protected final KyuubiConnection boundConnection;
   protected final KyuubiStatement boundStatement;
@@ -129,21 +128,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   }
 
   @Override
-  public boolean isAfterLast() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public boolean isFirst() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public boolean isLast() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public boolean next() throws SQLException {
     if (!rowsIter.hasNext()) {
       TFetchOrientation orientation =
@@ -183,36 +167,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   @Override
   public int getRow() throws SQLException {
     return currentRowNumber;
-  }
-
-  @Override
-  public void beforeFirst() throws SQLException {
-    throw new SQLFeatureNotSupportedException("beforeFirst not supported yet");
-  }
-
-  @Override
-  public void afterLast() throws SQLException {
-    throw new SQLFeatureNotSupportedException("beforeFirst not supported yet");
-  }
-
-  @Override
-  public boolean absolute(int row) throws SQLException {
-    throw new SQLFeatureNotSupportedException("absolute not supported");
-  }
-
-  @Override
-  public boolean relative(int rows) throws SQLException {
-    throw new SQLFeatureNotSupportedException("absolute not supported");
-  }
-
-  @Override
-  public boolean previous() throws SQLException {
-    throw new SQLFeatureNotSupportedException("absolute not supported");
-  }
-
-  @Override
-  public void setFetchDirection(int direction) throws SQLException {
-    throw new SQLFeatureNotSupportedException("absolute not supported");
   }
 
   @Override
@@ -257,16 +211,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   }
 
   @Override
-  public Reader getCharacterStream(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Reader getCharacterStream(String columnLabel) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public BigDecimal getBigDecimal(int columnIndex) throws SQLException {
     return (BigDecimal) getObject(columnIndex);
   }
@@ -277,23 +221,8 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   }
 
   @Override
-  public boolean first() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public boolean last() throws SQLException {
     return false;
-  }
-
-  @Override
-  public Array getArray(int i) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Array getArray(String colName) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
@@ -431,11 +360,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   }
 
   @Override
-  public byte[] getBytes(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public Date getDate(int columnIndex) throws SQLException {
     Object obj = getObject(columnIndex);
     if (obj == null) {
@@ -457,11 +381,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   }
 
   @Override
-  public Time getTime(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public Timestamp getTimestamp(int columnIndex) throws SQLException {
     Object obj = getObject(columnIndex);
     if (obj == null) {
@@ -474,16 +393,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
       return Timestamp.valueOf((String) obj);
     }
     throw new SQLException("Illegal conversion");
-  }
-
-  @Override
-  public InputStream getAsciiStream(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public InputStream getUnicodeStream(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
@@ -570,16 +479,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   }
 
   @Override
-  public InputStream getAsciiStream(String columnName) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public InputStream getUnicodeStream(String columnLabel) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public InputStream getBinaryStream(String columnLabel) throws SQLException {
     return getBinaryStream(findColumn(columnLabel));
   }
@@ -591,21 +490,6 @@ public class KyuubiResultSet extends ReadonlyResultSet {
 
   @Override
   public void clearWarnings() throws SQLException {}
-
-  @Override
-  public Blob getBlob(int i) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Blob getBlob(String colName) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public String getCursorName() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
 
   @Override
   public ResultSetMetaData getMetaData() throws SQLException {
@@ -655,158 +539,13 @@ public class KyuubiResultSet extends ReadonlyResultSet {
   }
 
   @Override
-  public Object getObject(int columnIndex, Map<String, Class<?>> map) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Ref getRef(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Clob getClob(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Object getObject(String columnLabel, Map<String, Class<?>> map) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Ref getRef(String columnLabel) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Clob getClob(String columnLabel) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Date getDate(int columnIndex, Calendar cal) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Date getDate(String columnLabel, Calendar cal) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Time getTime(int columnIndex, Calendar cal) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Time getTime(String columnLabel, Calendar cal) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Timestamp getTimestamp(int columnIndex, Calendar cal) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Timestamp getTimestamp(String columnLabel, Calendar cal) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public URL getURL(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public URL getURL(String columnLabel) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public RowId getRowId(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public RowId getRowId(String columnLabel) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public int getHoldability() throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public boolean isClosed() throws SQLException {
     return boundStatement.isClosed();
   }
 
   @Override
-  public NClob getNClob(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public NClob getNClob(String columnLabel) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public SQLXML getSQLXML(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public SQLXML getSQLXML(String columnLabel) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public String getNString(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public String getNString(String columnLabel) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Reader getNCharacterStream(int columnIndex) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public Reader getNCharacterStream(String columnLabel) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public <T> T getObject(int columnIndex, Class<T> type) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public <T> T getObject(String columnLabel, Class<T> type) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
   public boolean wasNull() throws SQLException {
     return wasNull;
-  }
-
-  @Override
-  public <T> T unwrap(Class<T> iface) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
-  }
-
-  @Override
-  public boolean isWrapperFor(Class<?> iface) throws SQLException {
-    throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   private int toZeroIndex(int columnIndex) {

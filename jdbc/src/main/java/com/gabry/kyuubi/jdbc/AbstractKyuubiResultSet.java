@@ -3,9 +3,272 @@ package com.gabry.kyuubi.jdbc;
 import java.io.InputStream;
 import java.io.Reader;
 import java.math.BigDecimal;
+import java.net.URL;
 import java.sql.*;
+import java.util.Calendar;
+import java.util.Map;
 
-public abstract class ReadonlyResultSet implements ResultSet {
+public abstract class AbstractKyuubiResultSet implements ResultSet {
+  @Override
+  public byte[] getBytes(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Time getTime(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public InputStream getAsciiStream(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public InputStream getUnicodeStream(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Blob getBlob(int i) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Blob getBlob(String colName) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public String getCursorName() throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Object getObject(int columnIndex, Map<String, Class<?>> map) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Ref getRef(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Clob getClob(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Object getObject(String columnLabel, Map<String, Class<?>> map) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Ref getRef(String columnLabel) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Clob getClob(String columnLabel) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Date getDate(int columnIndex, Calendar cal) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Date getDate(String columnLabel, Calendar cal) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Time getTime(int columnIndex, Calendar cal) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Time getTime(String columnLabel, Calendar cal) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Timestamp getTimestamp(int columnIndex, Calendar cal) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Timestamp getTimestamp(String columnLabel, Calendar cal) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public URL getURL(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public URL getURL(String columnLabel) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public RowId getRowId(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public RowId getRowId(String columnLabel) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public int getHoldability() throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public NClob getNClob(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public NClob getNClob(String columnLabel) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public SQLXML getSQLXML(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public SQLXML getSQLXML(String columnLabel) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public String getNString(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public String getNString(String columnLabel) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Reader getNCharacterStream(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Reader getNCharacterStream(String columnLabel) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public <T> T getObject(int columnIndex, Class<T> type) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public <T> T getObject(String columnLabel, Class<T> type) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public <T> T unwrap(Class<T> iface) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public boolean isWrapperFor(Class<?> iface) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public InputStream getAsciiStream(String columnName) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public InputStream getUnicodeStream(String columnLabel) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Array getArray(int i) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Array getArray(String colName) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Reader getCharacterStream(int columnIndex) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public Reader getCharacterStream(String columnLabel) throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public boolean first() throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public boolean relative(int rows) throws SQLException {
+    throw new SQLFeatureNotSupportedException("absolute not supported");
+  }
+
+  @Override
+  public boolean previous() throws SQLException {
+    throw new SQLFeatureNotSupportedException("absolute not supported");
+  }
+
+  @Override
+  public void setFetchDirection(int direction) throws SQLException {
+    throw new SQLFeatureNotSupportedException("absolute not supported");
+  }
+
+  @Override
+  public void beforeFirst() throws SQLException {
+    throw new SQLFeatureNotSupportedException("beforeFirst not supported yet");
+  }
+
+  @Override
+  public void afterLast() throws SQLException {
+    throw new SQLFeatureNotSupportedException("beforeFirst not supported yet");
+  }
+
+  @Override
+  public boolean absolute(int row) throws SQLException {
+    throw new SQLFeatureNotSupportedException("absolute not supported");
+  }
+
+  @Override
+  public boolean isAfterLast() throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public boolean isFirst() throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
+  @Override
+  public boolean isLast() throws SQLException {
+    throw new SQLFeatureNotSupportedException("Method not supported");
+  }
+
   @Override
   public void updateNCharacterStream(int columnIndex, Reader x, long length) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
@@ -13,9 +276,10 @@ public abstract class ReadonlyResultSet implements ResultSet {
 
   @Override
   public void updateNCharacterStream(String columnLabel, Reader reader, long length)
-          throws SQLException {
+      throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
+
   @Override
   public void updateSQLXML(int columnIndex, SQLXML xmlObject) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
@@ -45,6 +309,7 @@ public abstract class ReadonlyResultSet implements ResultSet {
   public void updateNClob(String columnLabel, NClob nClob) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
+
   @Override
   public void updateRowId(int columnIndex, RowId x) throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
@@ -377,31 +642,31 @@ public abstract class ReadonlyResultSet implements ResultSet {
 
   @Override
   public void updateAsciiStream(String columnLabel, InputStream x, long length)
-          throws SQLException {
+      throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public void updateBinaryStream(String columnLabel, InputStream x, long length)
-          throws SQLException {
+      throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public void updateCharacterStream(String columnLabel, Reader reader, long length)
-          throws SQLException {
+      throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public void updateBlob(int columnIndex, InputStream inputStream, long length)
-          throws SQLException {
+      throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
   @Override
   public void updateBlob(String columnLabel, InputStream inputStream, long length)
-          throws SQLException {
+      throws SQLException {
     throw new SQLFeatureNotSupportedException("Method not supported");
   }
 
