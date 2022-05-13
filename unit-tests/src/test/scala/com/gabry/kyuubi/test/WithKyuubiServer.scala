@@ -28,15 +28,17 @@ trait WithKyuubiServer extends AnyFunSuite with BeforeAndAfterAll
     val engineJarPath = Utils.getCodeSourceLocation(classOf[SparkSQLEngine])
     conf.set("kyuubi.session.engine.spark.main.resource",engineJarPath)
     conf.set(KYUUBI_ENGINE_ENV_PREFIX + ".SPARK_HOME", rootDir + "../" + globalConf.getProperty("spark.home"))
+    conf.set(KYUUBI_ENGINE_ENV_PREFIX + ".KYUUBI_WORK_DIR_ROOT", rootDir + "../logs")
+
     conf.set(FRONTEND_PROTOCOLS, Seq("THRIFT_BINARY"))
     conf.set(SERVER_OPERATION_LOG_DIR_ROOT, rootDir + "server-operation-logs")
     conf.set(METRICS_ENABLED, false)
     conf.set(AUTHENTICATION_METHOD, Seq("NOSASL"))
-    conf.set(ZK_CLIENT_PORT_ADDRESS, "localhost")
     conf.set(FRONTEND_BIND_HOST, "localhost")
 
     zkServer = new EmbeddedZookeeper()
     conf.set(ZookeeperConf.ZK_CLIENT_PORT, 0)
+    conf.set(ZookeeperConf.ZK_CLIENT_PORT_ADDRESS, "localhost")
     val zkData = Utils.createTempDir()
     conf.set(ZookeeperConf.ZK_DATA_DIR, zkData.toString)
     zkServer.initialize(conf)

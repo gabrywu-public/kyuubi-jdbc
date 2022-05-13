@@ -16,8 +16,9 @@ class JdbcConnectionSuite extends WithKyuubiServer with WithJdbcDriver {
   test("testDatabaseMetadata") {
     withConnection(s"jdbc:kyuubi://${getConnectionUrl}/default") { connection =>
       val databaseMetaData = connection.getMetaData
+      assert(null != databaseMetaData)
       val resultSet = databaseMetaData.getCatalogs
-
+      assert(null != resultSet)
       assert(!resultSet.isClosed)
       assert(resultSet.next)
       assert("spark_catalog" == resultSet.getString(1))
@@ -25,7 +26,7 @@ class JdbcConnectionSuite extends WithKyuubiServer with WithJdbcDriver {
       resultSet.close()
     }
   }
-  test("test open"){
+  test("test open") {
     val connectionInfo = ConnectionInfo.parse(s"jdbc:kyuubi://${getConnectionUrl}/default")
     val connection = new KyuubiConnection(connectionInfo)
     assert(connection.isClosed)

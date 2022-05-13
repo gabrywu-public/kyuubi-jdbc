@@ -306,10 +306,13 @@ public class KyuubiConnection extends AbstractKyuubiConnection {
             try {
               while (!stopping && hasMoreLogs()) {
                 getExecLog().forEach(line -> logger.info("engine log {}", line));
-                Thread.sleep(500);
+                Thread.sleep(100);
               }
             } catch (Exception e) {
-              logger.info("failed to get engine log, the process maybe finish: {}", e.getMessage());
+              if (!stopping) {
+                logger.error(
+                    "failed to get engine log, the process maybe finish: {}", e.getMessage(), e);
+              }
             }
 
             logger.info("Finished to get launch engine log.");

@@ -685,7 +685,7 @@ public class KyuubiDatabaseMetaData implements DatabaseMetaData {
       KyuubiStatement catalogStatement =
           KyuubiStatement.createStatementForOperation(
               boundConnection, boundClient, boundSessionHandle, catalogResp.getOperationHandle());
-      return catalogStatement.getResultSet();
+      return catalogStatement.executeOperation();
     } catch (TException e) {
       throw new SQLException(e.getMessage(), e);
     }
