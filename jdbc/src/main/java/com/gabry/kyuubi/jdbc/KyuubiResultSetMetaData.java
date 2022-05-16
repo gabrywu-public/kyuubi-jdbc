@@ -1,6 +1,7 @@
 package com.gabry.kyuubi.jdbc;
 
 import com.gabry.kyuubi.cli.KyuubiTableSchema;
+import org.apache.hadoop.hive.serde2.thrift.Type;
 import org.apache.hive.service.cli.ColumnDescriptor;
 
 import java.sql.*;
@@ -53,8 +54,7 @@ public class KyuubiResultSetMetaData implements ResultSetMetaData {
   @Override
   public int getColumnDisplaySize(int columnIndex) throws SQLException {
     ColumnDescriptor column = tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex));
-    Integer columnSize = column.getTypeDescriptor().getColumnSize();
-    return columnSize == null ? Integer.MAX_VALUE : columnSize;
+    return column.getType() == Type.BOOLEAN_TYPE ? 4 : column.getTypeDescriptor().getColumnSize();
   }
 
   @Override
@@ -74,13 +74,19 @@ public class KyuubiResultSetMetaData implements ResultSetMetaData {
 
   @Override
   public int getPrecision(int columnIndex) throws SQLException {
-    return tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex)).getTypeDescriptor().getPrecision();
+    return tableSchema
+        .getColumnDescriptorAt(toZeroIndex(columnIndex))
+        .getTypeDescriptor()
+        .getPrecision();
   }
 
   @Override
   public int getScale(int columnIndex) throws SQLException {
     Integer scale =
-        tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex)).getTypeDescriptor().getDecimalDigits();
+        tableSchema
+            .getColumnDescriptorAt(toZeroIndex(columnIndex))
+            .getTypeDescriptor()
+            .getDecimalDigits();
     return scale == null ? 0 : scale;
   }
 
@@ -121,7 +127,10 @@ public class KyuubiResultSetMetaData implements ResultSetMetaData {
 
   @Override
   public String getColumnClassName(int columnIndex) throws SQLException {
-    return JDBCType.valueOf(tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex)).getType().toJavaSQLType()).getClass().getName();
+    return JDBCType.valueOf(
+            tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex)).getType().toJavaSQLType())
+        .getClass()
+        .getName();
   }
 
   @Override

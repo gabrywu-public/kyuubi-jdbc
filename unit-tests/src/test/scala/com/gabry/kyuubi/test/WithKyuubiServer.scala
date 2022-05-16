@@ -8,7 +8,6 @@ import org.apache.kyuubi.ha.HighAvailabilityConf.{HA_ZK_AUTH_TYPE, HA_ZK_QUORUM}
 import org.apache.kyuubi.ha.client.AuthTypes
 import org.apache.kyuubi.metrics.MetricsConf.METRICS_ENABLED
 import org.apache.kyuubi.server.KyuubiServer
-import org.apache.kyuubi.zookeeper.ZookeeperConf.ZK_CLIENT_PORT_ADDRESS
 import org.apache.kyuubi.zookeeper.{EmbeddedZookeeper, ZookeeperConf}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
@@ -26,7 +25,7 @@ trait WithKyuubiServer extends AnyFunSuite with BeforeAndAfterAll
     val globalConf = new Properties()
     globalConf.load(classOf[WithKyuubiServer].getResourceAsStream("/global.properties"))
     val engineJarPath = Utils.getCodeSourceLocation(classOf[SparkSQLEngine])
-    conf.set("kyuubi.session.engine.spark.main.resource",engineJarPath)
+    conf.set("kyuubi.session.engine.spark.main.resource", engineJarPath)
     conf.set(KYUUBI_ENGINE_ENV_PREFIX + ".SPARK_HOME", rootDir + "../" + globalConf.getProperty("spark.home"))
     conf.set(KYUUBI_ENGINE_ENV_PREFIX + ".KYUUBI_WORK_DIR_ROOT", rootDir + "../logs")
 

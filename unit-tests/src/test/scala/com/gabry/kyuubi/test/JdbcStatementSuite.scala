@@ -42,43 +42,43 @@ class JdbcStatementSuite extends WithKyuubiServer with WithJdbcDriver {
   test("unsupported method") {
     withConnection(s"jdbc:kyuubi://${getConnectionUrl}/default") { connection =>
       val statement = connection.createStatement
-      assertThrows[SQLFeatureNotSupportedException] {
-        statement.execute("", 1)
-        statement.execute("", new Array[Int](0))
-        statement.execute("", new Array[String](0))
-        statement.unwrap(classOf[KyuubiStatement])
-        statement.executeUpdate("", 1)
-        statement.executeUpdate("", new Array[Int](0))
-        statement.executeUpdate("", new Array[String](0))
-        statement.getMaxFieldSize
-        statement.setMaxFieldSize(10)
-        statement.setEscapeProcessing(true)
-        statement.addBatch("")
-        statement.getWarnings
-        statement.clearWarnings
-        statement.setCursorName("")
-        statement.getUpdateCount
-        statement.getMoreResults
-        statement.getMoreResults(10)
-        statement.setFetchDirection(1)
-        statement.getResultSetConcurrency
-        statement.getResultSetType
-        statement.clearBatch
-        statement.executeBatch
-        statement.getGeneratedKeys
-        statement.getResultSetHoldability
-        statement.setPoolable(true)
-        statement.closeOnCompletion
-        statement.getLargeUpdateCount
-        statement.setLargeMaxRows(1)
-        statement.getLargeMaxRows
-        statement.executeLargeBatch
-        statement.executeLargeUpdate("")
-        statement.executeLargeUpdate("", 1)
-        statement.executeLargeUpdate("", new Array[Int](0))
-        statement.executeLargeUpdate("", new Array[String](0))
-        statement.isWrapperFor(classOf[KyuubiStatement])
-      }
+
+      assertThrows[SQLFeatureNotSupportedException](statement.execute("", 1))
+      assertThrows[SQLFeatureNotSupportedException](statement.execute("", new Array[Int](0)))
+      assertThrows[SQLFeatureNotSupportedException](statement.execute("", new Array[String](0)))
+      assertThrows[SQLFeatureNotSupportedException](statement.unwrap(classOf[KyuubiStatement]))
+      assertThrows[SQLFeatureNotSupportedException](statement.executeUpdate("", 1))
+      assertThrows[SQLFeatureNotSupportedException](statement.executeUpdate("", new Array[Int](0)))
+      assertThrows[SQLFeatureNotSupportedException](statement.executeUpdate("", new Array[String](0)))
+      assertThrows[SQLFeatureNotSupportedException](statement.getMaxFieldSize)
+      assertThrows[SQLFeatureNotSupportedException](statement.setMaxFieldSize(10))
+      assertThrows[SQLFeatureNotSupportedException](statement.setEscapeProcessing(true))
+      assertThrows[SQLFeatureNotSupportedException](statement.addBatch(""))
+      assertThrows[SQLFeatureNotSupportedException](statement.getWarnings)
+      assertThrows[SQLFeatureNotSupportedException](statement.clearWarnings)
+      assertThrows[SQLFeatureNotSupportedException](statement.setCursorName(""))
+      assertThrows[SQLFeatureNotSupportedException](statement.getUpdateCount)
+      assertThrows[SQLFeatureNotSupportedException](statement.getMoreResults)
+      assertThrows[SQLFeatureNotSupportedException](statement.getMoreResults(10))
+      assertThrows[SQLFeatureNotSupportedException](statement.setFetchDirection(1))
+      assertThrows[SQLFeatureNotSupportedException](statement.getResultSetConcurrency)
+      assertThrows[SQLFeatureNotSupportedException](statement.getResultSetType)
+      assertThrows[SQLFeatureNotSupportedException](statement.clearBatch)
+      assertThrows[SQLFeatureNotSupportedException](statement.executeBatch)
+      assertThrows[SQLFeatureNotSupportedException](statement.getGeneratedKeys)
+      assertThrows[SQLFeatureNotSupportedException](statement.getResultSetHoldability)
+      assertThrows[SQLFeatureNotSupportedException](statement.setPoolable(true))
+      assertThrows[SQLFeatureNotSupportedException](statement.closeOnCompletion)
+      assertThrows[SQLFeatureNotSupportedException](statement.getLargeUpdateCount)
+      assertThrows[SQLFeatureNotSupportedException](statement.setLargeMaxRows(1))
+      assertThrows[SQLFeatureNotSupportedException](statement.getLargeMaxRows)
+      assertThrows[SQLFeatureNotSupportedException](statement.executeLargeBatch)
+      assertThrows[SQLFeatureNotSupportedException](statement.executeLargeUpdate(""))
+      assertThrows[SQLFeatureNotSupportedException](statement.executeLargeUpdate("", 1))
+      assertThrows[SQLFeatureNotSupportedException](statement.executeLargeUpdate("", new Array[Int](0)))
+      assertThrows[SQLFeatureNotSupportedException](statement.executeLargeUpdate("", new Array[String](0)))
+      assertThrows[SQLFeatureNotSupportedException](statement.isWrapperFor(classOf[KyuubiStatement]))
+
       statement.close()
     }
   }

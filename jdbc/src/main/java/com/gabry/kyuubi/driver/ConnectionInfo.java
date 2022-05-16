@@ -111,6 +111,7 @@ public class ConnectionInfo {
               .append(")?")
               .toString());
 
+  private String jdbcURL;
   private String schema;
   private String user;
   private String password;
@@ -200,7 +201,12 @@ public class ConnectionInfo {
                 .map(config -> config.split("=", -1))
                 .collect(Collectors.toMap(m -> m[0], m -> m[1]))
             : Collections.emptyMap();
+    connectionInfo.jdbcURL = jdbcUrlStr;
     return connectionInfo;
+  }
+
+  public String getJdbcURL() {
+    return jdbcURL;
   }
 
   public String getSchema() {
@@ -237,25 +243,16 @@ public class ConnectionInfo {
 
   @Override
   public String toString() {
-    return "ConnectionInfo{"
-        + "schema='"
-        + schema
-        + '\''
-        + ", user='"
-        + user
-        + '\''
-        + ", password='"
-        + password
-        + '\''
-        + ", hostInfos="
-        + Arrays.toString(hostInfos)
-        + ", dbName='"
-        + dbName
-        + '\''
-        + ", sessionConfigs="
-        + sessionConfigs
-        + ", engineConfigs="
-        + engineConfigs
-        + '}';
+    return "ConnectionInfo{" +
+            "jdbcURL='" + jdbcURL + '\'' +
+            ", schema='" + schema + '\'' +
+            ", user='" + user + '\'' +
+            ", password='" + password + '\'' +
+            ", hostInfos=" + Arrays.toString(hostInfos) +
+            ", dbName='" + dbName + '\'' +
+            ", sessionConfigs=" + sessionConfigs +
+            ", engineConfigs=" + engineConfigs +
+            ", engineVars=" + engineVars +
+            '}';
   }
 }

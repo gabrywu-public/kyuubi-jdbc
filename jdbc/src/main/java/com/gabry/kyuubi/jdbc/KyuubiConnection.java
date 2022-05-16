@@ -94,6 +94,13 @@ public class KyuubiConnection extends AbstractKyuubiConnection {
     }
   }
 
+  public String getJdbcURL() {
+    return connectionInfo.getJdbcURL();
+  }
+  public String getUserName(){
+    return connectionInfo.getUser();
+  }
+
   @Override
   public Statement createStatement() throws SQLException {
     checkOpen();
