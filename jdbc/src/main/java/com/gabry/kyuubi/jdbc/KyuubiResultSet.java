@@ -1,14 +1,13 @@
 package com.gabry.kyuubi.jdbc;
 
+import com.gabry.kyuubi.cli.KyuubiColumn;
+import com.gabry.kyuubi.cli.KyuubiColumnType;
 import com.gabry.kyuubi.cli.KyuubiTableSchema;
 import com.gabry.kyuubi.utils.Utils;
 import org.apache.hadoop.hive.common.type.HiveIntervalDayTime;
 import org.apache.hadoop.hive.common.type.HiveIntervalYearMonth;
-import org.apache.hadoop.hive.serde2.thrift.Type;
-import org.apache.hive.service.cli.ColumnDescriptor;
 import org.apache.hive.service.cli.FetchType;
 import org.apache.hive.service.cli.RowSetFactory;
-import org.apache.hive.service.cli.TableSchema;
 import org.apache.hive.service.rpc.thrift.*;
 import org.apache.thrift.TException;
 import org.slf4j.Logger;
@@ -48,7 +47,7 @@ public class KyuubiResultSet extends AbstractKyuubiResultSet {
       TSessionHandle sessionHandle,
       FetchType fetchType)
       throws SQLException {
-    TableSchema tableSchema = retrieveSchema(client, operationHandle);
+    KyuubiTableSchema tableSchema = retrieveSchema(client, operationHandle);
 
     return new KyuubiResultSet(
         statement,
@@ -67,7 +66,7 @@ public class KyuubiResultSet extends AbstractKyuubiResultSet {
       TOperationHandle operationHandle,
       FetchType fetchType,
       TSessionHandle sessionHandle,
-      TableSchema tableSchema,
+      KyuubiTableSchema tableSchema,
       int maxRows,
       int fetchSize) {
     this(
@@ -89,7 +88,7 @@ public class KyuubiResultSet extends AbstractKyuubiResultSet {
       TOperationHandle operationHandle,
       FetchType fetchType,
       TSessionHandle sessionHandle,
-      TableSchema tableSchema,
+      KyuubiTableSchema tableSchema,
       int maxRows,
       int fetchSize) {
     this.boundStatement = statement;
@@ -102,11 +101,11 @@ public class KyuubiResultSet extends AbstractKyuubiResultSet {
     this.boundOperationHandle = operationHandle;
     this.fetchType = fetchType;
     this.boundSessionHandle = sessionHandle;
-    this.tableSchema = new KyuubiTableSchema(tableSchema);
+    this.tableSchema = tableSchema;
     this.metaData = new KyuubiResultSetMetaData(this.tableSchema);
   }
 
-  private static TableSchema retrieveSchema(
+  private static KyuubiTableSchema retrieveSchema(
       TCLIService.Iface client, TOperationHandle operationHandle) throws SQLException {
     TGetResultSetMetadataReq metadataReq = new TGetResultSetMetadataReq(operationHandle);
     try {
@@ -116,7 +115,7 @@ public class KyuubiResultSet extends AbstractKyuubiResultSet {
       if (tTableSchema == null || !tTableSchema.isSetColumns()) {
         throw new SQLException("table not found: " + operationHandle);
       }
-      return new TableSchema(tTableSchema);
+      return new KyuubiTableSchema(tTableSchema);
     } catch (TException e) {
       throw new SQLException(e);
     }
@@ -203,11 +202,11 @@ public class KyuubiResultSet extends AbstractKyuubiResultSet {
    */
   @Override
   public int findColumn(String columnLabel) throws SQLException {
-    ColumnDescriptor columnDescriptor = tableSchema.getColumnDescriptorOf(columnLabel);
+    KyuubiColumn columnDescriptor = tableSchema.getColumn(columnLabel);
     if (columnDescriptor == null) {
       throw new SQLException("can't find column " + columnLabel);
     }
-    return columnDescriptor.getOrdinalPosition() + 1;
+    return columnDescriptor.getPosition() + 1;
   }
 
   @Override
@@ -499,7 +498,7 @@ public class KyuubiResultSet extends AbstractKyuubiResultSet {
   @Override
   public Object getObject(int columnIndex) throws SQLException {
     int zeroBasedIndex = toZeroIndex(columnIndex);
-    Type columnType = tableSchema.getColumnDescriptorAt(zeroBasedIndex).getType();
+    KyuubiColumnType columnType = tableSchema.getColumn(zeroBasedIndex).getType();
     Object rawObj = currentRow[zeroBasedIndex];
     Object convertedObj = rawObj;
     switch (columnType) {

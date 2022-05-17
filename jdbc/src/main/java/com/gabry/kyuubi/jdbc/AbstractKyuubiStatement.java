@@ -1,7 +1,6 @@
 package com.gabry.kyuubi.jdbc;
 
 import java.sql.*;
-import java.util.Collections;
 
 public abstract class AbstractKyuubiStatement extends AbstractKyuubiLoggable implements Statement {
   @Override

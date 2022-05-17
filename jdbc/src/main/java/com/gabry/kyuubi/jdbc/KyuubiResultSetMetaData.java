@@ -1,10 +1,11 @@
 package com.gabry.kyuubi.jdbc;
 
+import com.gabry.kyuubi.cli.KyuubiColumn;
 import com.gabry.kyuubi.cli.KyuubiTableSchema;
-import org.apache.hadoop.hive.serde2.thrift.Type;
-import org.apache.hive.service.cli.ColumnDescriptor;
 
 import java.sql.*;
+
+import static com.gabry.kyuubi.cli.KyuubiColumnType.BOOLEAN_TYPE;
 
 public class KyuubiResultSetMetaData implements ResultSetMetaData {
   private final KyuubiTableSchema tableSchema;
@@ -15,24 +16,24 @@ public class KyuubiResultSetMetaData implements ResultSetMetaData {
 
   @Override
   public int getColumnCount() throws SQLException {
-    return tableSchema.getColumnDescriptors().size();
+    return tableSchema.getColumnSize();
   }
 
   @Override
   public boolean isAutoIncrement(int columnIndex) throws SQLException {
-    ColumnDescriptor column = tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex));
+    KyuubiColumn column = tableSchema.getColumn(toZeroIndex(columnIndex));
     return column.getType().isAutoIncrement();
   }
 
   @Override
   public boolean isCaseSensitive(int columnIndex) throws SQLException {
-    ColumnDescriptor column = tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex));
+    KyuubiColumn column = tableSchema.getColumn(toZeroIndex(columnIndex));
     return column.getType().isCaseSensitive();
   }
 
   @Override
   public boolean isSearchable(int columnIndex) throws SQLException {
-    ColumnDescriptor column = tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex));
+    KyuubiColumn column = tableSchema.getColumn(toZeroIndex(columnIndex));
     return column.getType().getSearchable() == DatabaseMetaData.typeSearchable;
   }
 
@@ -53,8 +54,8 @@ public class KyuubiResultSetMetaData implements ResultSetMetaData {
 
   @Override
   public int getColumnDisplaySize(int columnIndex) throws SQLException {
-    ColumnDescriptor column = tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex));
-    return column.getType() == Type.BOOLEAN_TYPE ? 4 : column.getTypeDescriptor().getColumnSize();
+    KyuubiColumn column = tableSchema.getColumn(toZeroIndex(columnIndex));
+    return column.getType() == BOOLEAN_TYPE ? 4 : column.getColumnSize();
   }
 
   @Override
@@ -64,7 +65,7 @@ public class KyuubiResultSetMetaData implements ResultSetMetaData {
 
   @Override
   public String getColumnName(int columnIndex) throws SQLException {
-    return tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex)).getName();
+    return tableSchema.getColumn(toZeroIndex(columnIndex)).getName();
   }
 
   @Override
@@ -74,19 +75,12 @@ public class KyuubiResultSetMetaData implements ResultSetMetaData {
 
   @Override
   public int getPrecision(int columnIndex) throws SQLException {
-    return tableSchema
-        .getColumnDescriptorAt(toZeroIndex(columnIndex))
-        .getTypeDescriptor()
-        .getPrecision();
+    return tableSchema.getColumn(toZeroIndex(columnIndex)).getPrecision();
   }
 
   @Override
   public int getScale(int columnIndex) throws SQLException {
-    Integer scale =
-        tableSchema
-            .getColumnDescriptorAt(toZeroIndex(columnIndex))
-            .getTypeDescriptor()
-            .getDecimalDigits();
+    Integer scale = tableSchema.getColumn(toZeroIndex(columnIndex)).getDecimalDigits();
     return scale == null ? 0 : scale;
   }
 
@@ -102,7 +96,7 @@ public class KyuubiResultSetMetaData implements ResultSetMetaData {
 
   @Override
   public int getColumnType(int columnIndex) throws SQLException {
-    return tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex)).getType().toJavaSQLType();
+    return tableSchema.getColumn(toZeroIndex(columnIndex)).getType().toJavaSQLType();
   }
 
   @Override
@@ -128,7 +122,7 @@ public class KyuubiResultSetMetaData implements ResultSetMetaData {
   @Override
   public String getColumnClassName(int columnIndex) throws SQLException {
     return JDBCType.valueOf(
-            tableSchema.getColumnDescriptorAt(toZeroIndex(columnIndex)).getType().toJavaSQLType())
+            tableSchema.getColumn(toZeroIndex(columnIndex)).getType().toJavaSQLType())
         .getClass()
         .getName();
   }
