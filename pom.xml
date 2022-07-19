@@ -11,6 +11,7 @@
         <module>jdbc</module>
         <module>common</module>
         <module>unit-tests</module>
+      <module>mysql-engine</module>
     </modules>
     <packaging>pom</packaging>
 
@@ -29,6 +30,7 @@
         <log4j.version>2.17.2</log4j.version>
         <hive.storage.version>2.7.2</hive.storage.version>
         <slf4j.version>1.7.36</slf4j.version>
+        <kyuubi.version>1.5.2-incubating</kyuubi.version>
     </properties>
 
     <dependencyManagement>
