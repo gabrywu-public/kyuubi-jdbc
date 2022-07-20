@@ -5,13 +5,14 @@ import org.apache.kyuubi.config.KyuubiConf
 import org.apache.kyuubi.config.KyuubiConf._
 import org.apache.kyuubi.engine.spark.SparkSQLEngine
 import org.apache.kyuubi.ha.HighAvailabilityConf.{HA_ZK_AUTH_TYPE, HA_ZK_QUORUM}
-import org.apache.kyuubi.ha.client.AuthTypes
 import org.apache.kyuubi.metrics.MetricsConf.METRICS_ENABLED
 import org.apache.kyuubi.server.KyuubiServer
+import org.apache.kyuubi.service.authentication.AuthTypes
 import org.apache.kyuubi.zookeeper.{EmbeddedZookeeper, ZookeeperConf}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
 
+import java.io.File
 import java.util.Properties
 
 trait WithKyuubiServer extends AnyFunSuite with BeforeAndAfterAll
@@ -20,11 +21,15 @@ trait WithKyuubiServer extends AnyFunSuite with BeforeAndAfterAll
   protected var server: KyuubiServer = _
   private var zkServer: EmbeddedZookeeper = _
 
+  private def getCodeSourceLocation(clazz: Class[_]): String = {
+    new File(clazz.getProtectionDomain.getCodeSource.getLocation.toURI).getPath
+  }
+
   override def beforeAll(): Unit = {
     val rootDir = classOf[WithKyuubiServer].getResource("/").toURI.getPath
     val globalConf = new Properties()
     globalConf.load(classOf[WithKyuubiServer].getResourceAsStream("/global.properties"))
-    val engineJarPath = Utils.getCodeSourceLocation(classOf[SparkSQLEngine])
+    val engineJarPath = getCodeSourceLocation(classOf[SparkSQLEngine])
     conf.set("kyuubi.session.engine.spark.main.resource", engineJarPath)
     conf.set(KYUUBI_ENGINE_ENV_PREFIX + ".SPARK_HOME", rootDir + "../" + globalConf.getProperty("spark.home"))
     conf.set(KYUUBI_ENGINE_ENV_PREFIX + ".KYUUBI_WORK_DIR_ROOT", rootDir + "../logs")

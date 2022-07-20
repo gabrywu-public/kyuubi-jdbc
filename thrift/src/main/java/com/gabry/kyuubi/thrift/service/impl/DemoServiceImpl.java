@@ -1,5 +1,6 @@
 package com.gabry.kyuubi.thrift.service.impl;
 
+import com.gabry.kyuubi.thrift.service.DemoService;
 import org.apache.thrift.TException;
 
 public class DemoServiceImpl implements DemoService.Iface {

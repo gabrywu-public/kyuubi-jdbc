@@ -1,5 +1,6 @@
 package com.gabry.kyuubi.thrift.server;
 
+import com.gabry.kyuubi.thrift.service.DemoService;
 import com.gabry.kyuubi.thrift.service.impl.DemoServiceImpl;
 import org.apache.thrift.TProcessor;
 import org.apache.thrift.protocol.TCompactProtocol;
@@ -13,7 +14,7 @@ public class Server {
     try {
       socket = new TNonblockingServerSocket(9090);
       TNonblockingServer.Args options = new TNonblockingServer.Args(socket);
-      TProcessor processor = new DemoService.Processor<Iface>(new DemoServiceImpl());
+      TProcessor processor = new DemoService.Processor<DemoService.Iface>(new DemoServiceImpl());
       options.processor(processor);
       options.protocolFactory(new TCompactProtocol.Factory());
       TServer server = new TNonblockingServer(options);
