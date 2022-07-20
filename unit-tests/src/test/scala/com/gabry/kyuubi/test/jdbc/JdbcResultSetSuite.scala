@@ -1,6 +1,7 @@
-package com.gabry.kyuubi.test
+package com.gabry.kyuubi.test.jdbc
 
 import com.gabry.kyuubi.jdbc.KyuubiStatement
+import com.gabry.kyuubi.test.base.WithJdbcDriver
 import org.apache.kyuubi.config.KyuubiConf
 
 import java.sql.{Date, JDBCType, ResultSet, Timestamp}

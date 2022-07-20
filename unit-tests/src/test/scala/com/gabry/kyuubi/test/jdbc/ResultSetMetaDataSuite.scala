@@ -1,4 +1,4 @@
-package com.gabry.kyuubi.test
+package com.gabry.kyuubi.test.jdbc
 
 import com.gabry.kyuubi.jdbc.KyuubiStatement
 import org.apache.kyuubi.config.KyuubiConf

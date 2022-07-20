@@ -1,5 +1,6 @@
-package com.gabry.kyuubi.test
+package com.gabry.kyuubi.test.jdbc
 
+import com.gabry.kyuubi.test.base.WithJdbcDriver
 import com.gabry.kyuubi.utils.Utils
 
 import java.sql.Statement

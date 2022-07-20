@@ -13,6 +13,7 @@
         <module>unit-tests</module>
         <module>mysql-engine</module>
         <module>thrift</module>
+        <module>server</module>
     </modules>
     <packaging>pom</packaging>
 

@@ -15,11 +15,11 @@
 
   <name>thrift</name>
 
-
   <dependencies>
     <dependency>
       <groupId>org.apache.thrift</groupId>
       <artifactId>libthrift</artifactId>
+      <version>0.16.0</version>
     </dependency>
   </dependencies>
 

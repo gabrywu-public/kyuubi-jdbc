@@ -1,10 +1,9 @@
-package com.gabry.kyuubi.test
+package com.gabry.kyuubi.test.base
 
 import com.gabry.kyuubi.driver.KyuubiDriver
 import com.gabry.kyuubi.utils.Utils
 
 import java.sql.Connection
-
 
 trait WithJdbcDriver {
   val kyuubiDriver = new KyuubiDriver

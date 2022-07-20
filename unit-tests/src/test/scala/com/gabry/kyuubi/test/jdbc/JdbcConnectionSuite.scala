@@ -1,7 +1,8 @@
-package com.gabry.kyuubi.test
+package com.gabry.kyuubi.test.jdbc
 
 import com.gabry.kyuubi.driver.ConnectionInfo
 import com.gabry.kyuubi.jdbc.KyuubiConnection
+import com.gabry.kyuubi.test.base.WithJdbcDriver
 import org.apache.kyuubi.config.KyuubiConf
 
 class JdbcConnectionSuite extends WithKyuubiServer with WithJdbcDriver {
